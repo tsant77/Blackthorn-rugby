@@ -1,6 +1,6 @@
 # Blackthorn Rugby — Offseason Performance Platform
 
-Phase 3 of 7 for Blackthorn Rugby Club. Players can log workouts, edit or delete their own, and see leaderboards. Coach moderation tools are next.
+Phase 4 of 7 for Blackthorn Rugby Club. Players and coaches can log, and the home, team, and leaderboard views show week, month, and offseason totals. Coach moderation is next.
 
 The club crest and colors come from [blackthornrugbyclub.com](https://www.blackthornrugbyclub.com). The app is a dark charcoal tool. Gold (`#F2B10B`) is the accent. The crest file is `apps/web/public/brand/logo.jpg`.
 
