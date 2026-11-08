@@ -86,14 +86,7 @@ export function registerEngageRoutes(
   app.patch("/api/me/notifications", async (c) => {
     const session = await currentSession(c);
     if (!session) return c.json({ error: "Sign in required." }, 401);
-    const body = await readJson(c);
-    if (typeof body?.emailNotifications !== "boolean") return c.json({ error: "Choose email on or off." }, 400);
-    await c.env.DB.prepare("UPDATE users SET email_notifications = ?, updated_at = ? WHERE id = ?").bind(
-      body.emailNotifications ? 1 : 0,
-      Date.now(),
-      session.user_id,
-    ).run();
-    return c.json({ ok: true, emailNotifications: body.emailNotifications });
+    return c.json({ error: "Email notifications are not available. Updates appear in your inbox." }, 410);
   });
 
   app.get("/api/challenges", async (c) => {

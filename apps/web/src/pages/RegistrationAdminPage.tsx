@@ -7,7 +7,7 @@ import { displayDate } from "../lib/dates";
 
 interface Status {
   link: { enabled: number; expires_at: number | null } | null;
-  players: { id: string; name: string; username: string; status: string; created_at: number }[];
+  players: { id: string; name: string; status: string; created_at: number }[];
 }
 export function RegistrationAdminPage() {
   const { me } = useSession();
@@ -42,10 +42,10 @@ export function RegistrationAdminPage() {
       {url ? <ShareLink url={url} label="Team registration link" /> : null}
       <p className="text-xs text-quiet">Copy and save the URL when created. Only its hash is stored, so it cannot be recovered after leaving this screen. Rotate if it is lost or shared outside the team.</p>
     </section>}
-    <section className="panel"><h2 className="font-heading font-semibold">Recently credentialed players</h2>
-      <p className="text-sm text-quiet">New registrations and existing players who added a username.</p>
-      {!status?.players.length ? <p className="text-sm text-quiet">No player credentials yet.</p> : <ul className="flex flex-col gap-s2">{status.players.map(p =>
-        <li key={p.id}><p className="font-heading font-semibold break-words">{p.name}</p><p className="text-sm text-quiet break-words">@{p.username} · {p.status} · {displayDate(new Date(p.created_at).toISOString().slice(0, 10))}</p></li>)}</ul>}
+    <section className="panel"><h2 className="font-heading font-semibold">Players with personal login links</h2>
+      <p className="text-sm text-quiet">New registrations and existing players who created a personal link.</p>
+      {!status?.players.length ? <p className="text-sm text-quiet">No personal player links yet.</p> : <ul className="flex flex-col gap-s2">{status.players.map(p =>
+        <li key={p.id}><p className="font-heading font-semibold break-words">{p.name}</p><p className="text-sm text-quiet break-words">{p.status} · {displayDate(new Date(p.created_at).toISOString().slice(0, 10))}</p></li>)}</ul>}
       <Link to="/members" className="secondary-button">Manage or deactivate members</Link>
     </section>
   </main>;

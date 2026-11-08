@@ -425,10 +425,18 @@ export const authLimits = sqliteTable("auth_limits", {
   bucket: text("bucket").primaryKey(),
   windowStart: integer("window_start").notNull(),
   attempts: integer("attempts").notNull(),
+}, table => [index("auth_limits_window_idx").on(table.windowStart)]);
+
+// Reusable Player-only credentials; raw tokens are shown once and never stored.
+export const playerLoginLinks = sqliteTable("player_login_links", {
+  userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "restrict" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
 });
 
 export const schemaTables = [
-  teamRegistration, passwordResets, authLimits,
+  teamRegistration, passwordResets, authLimits, playerLoginLinks,
   clubs,
   users,
   credentials,

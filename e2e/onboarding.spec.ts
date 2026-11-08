@@ -9,7 +9,7 @@ test("invite link, redeem, and onboarding", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/login");
   await expect(page.getByRole("heading", { name: "Offseason" })).toBeVisible();
-  await expect(page.getByText("Ask a coach for a link.")).toBeVisible();
+  await expect(page.getByText("Lost your link or changed devices?", { exact: false })).toBeVisible();
   await page.screenshot({ path: `${shots}/login-mobile.png` });
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.screenshot({ path: `${shots}/login-desktop.png` });

@@ -43,11 +43,12 @@ test("a badge, a challenge, and a void notice", async ({ page }) => {
   const roster = await page.request.get("/api/members");
   const members = (await roster.json()) as { members: { user_id: string; roster_name: string | null }[] };
   const player = members.members.find((member) => member.roster_name === "Test Player");
-  const playerLink = await page.request.post("/api/signin-links", { data: { userId: player?.user_id } });
+  const playerLink = await page.request.post("/api/player-login-links", { data: { userId: player?.user_id, action: "rotate" } });
   const playerUrl = ((await playerLink.json()) as { url: string }).url;
   await page.context().clearCookies();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(playerUrl);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.getByRole("button", { name: "Open club menu" }).click();
   await page.getByRole("link", { name: "Inbox", exact: true }).click();
   await expect(page.getByText("logged by mistake")).toBeVisible();

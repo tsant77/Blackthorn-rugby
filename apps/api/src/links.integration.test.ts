@@ -36,7 +36,7 @@ describe("shareable links", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email: "coach@blackthorn.test" }),
     }, env);
-    expect(off.status).toBe(404);
+    expect(off.status).toBe(410);
   });
 
   it("redeems a one-time invite into onboarding and rejects a second use", async () => {
