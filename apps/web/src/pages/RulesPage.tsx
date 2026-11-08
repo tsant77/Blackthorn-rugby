@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api";
 
@@ -21,10 +22,6 @@ interface Season {
 export function RulesPage() {
   const [rules, setRules] = useState<Rule[]>([]);
   const [season, setSeason] = useState<Season | null>(null);
-  const [daily, setDaily] = useState("300");
-  const [session, setSession] = useState("150");
-  const [weekly, setWeekly] = useState("600");
-  const [effectiveOn, setEffectiveOn] = useState("");
   const [profileId, setProfileId] = useState("");
   const [points, setPoints] = useState("1.0");
   const [reason, setReason] = useState("");
@@ -48,26 +45,6 @@ export function RulesPage() {
   useEffect(() => {
     void load().catch((caught: unknown) => setError(caught instanceof ApiError ? caught.message : "Could not load rules."));
   }, []);
-
-  async function onRule(event: FormEvent) {
-    event.preventDefault();
-    setError(null);
-    try {
-      await api("/api/rules", {
-        method: "POST",
-        body: JSON.stringify({
-          dailyCapTenths: Number(daily),
-          sessionCapTenths: Number(session),
-          weeklyLoadLimit: Number(weekly),
-          effectiveOn,
-        }),
-      });
-      setMessage("New rule version saved. Past ledger rows stay as they are.");
-      await load();
-    } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : "Could not save the rule.");
-    }
-  }
 
   async function onSeason(event: FormEvent) {
     event.preventDefault();
@@ -111,14 +88,7 @@ export function RulesPage() {
       {active ? <p className="text-quiet">Active version {active.version}. Session {active.session_cap_tenths / 10}, day {active.daily_cap_tenths / 10}, week load {active.weekly_load_limit}.</p> : null}
       {message ? <p role="status">{message}</p> : null}
       {error ? <p role="alert" className="text-gold-soft">{error}</p> : null}
-      <form onSubmit={onRule} className="flex flex-col gap-s2 rounded-md border border-line bg-raised p-s2">
-        <h2 className="font-heading font-semibold">New version</h2>
-        <Field label="Daily cap, tenths" value={daily} onChange={setDaily} />
-        <Field label="Session cap, tenths" value={session} onChange={setSession} />
-        <Field label="Weekly load, minutes" value={weekly} onChange={setWeekly} />
-        <Field label="Effective date" value={effectiveOn} onChange={setEffectiveOn} type="date" />
-        <button type="submit" className="rounded-md bg-gold px-s2 py-s1 font-heading font-semibold text-forest">Save version</button>
-      </form>
+      <Link to="/scoring-settings" className="secondary-button">Open Scoring Settings</Link>
       {season ? (
         <form onSubmit={onSeason} className="flex flex-col gap-s2 rounded-md border border-line bg-raised p-s2">
           <h2 className="font-heading font-semibold">Offseason</h2>

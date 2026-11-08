@@ -226,6 +226,7 @@ export const scoringRuleVersions = sqliteTable("scoring_rule_versions", {
   activatedAt: integer("activated_at", { mode: "timestamp_ms" }),
   retiredAt: integer("retired_at", { mode: "timestamp_ms" }),
 }, (table) => [
+  index("scoring_rules_effective_idx").on(table.clubId, table.effectiveOn, table.version),
   uniqueIndex("scoring_rule_versions_club_version_unique").on(table.clubId, table.version),
   uniqueIndex("scoring_rule_versions_one_active")
     .on(table.clubId)
@@ -234,6 +235,7 @@ export const scoringRuleVersions = sqliteTable("scoring_rule_versions", {
 ]);
 
 export const workouts = sqliteTable("workouts", {
+  scoringRevision: integer("scoring_revision").notNull().default(0),
   id: text("id").primaryKey(),
   clubId: text("club_id").notNull().references(() => clubs.id, { onDelete: "restrict" }),
   playerProfileId: text("player_profile_id").notNull().references(() => playerProfiles.id, { onDelete: "restrict" }),
@@ -435,8 +437,19 @@ export const playerLoginLinks = sqliteTable("player_login_links", {
   updatedAt: updatedAt(),
 });
 
+// The first mutation of a week pins its consistency rules; deltas remain in the immutable ledger.
+export const weeklyConsistency = sqliteTable("weekly_consistency", {
+  id: text("id").primaryKey(),
+  profileId: text("profile_id").notNull().references(() => playerProfiles.id, { onDelete: "restrict" }),
+  weekStart: text("week_start").notNull(),
+  ruleId: text("rule_id").notNull().references(() => scoringRuleVersions.id, { onDelete: "restrict" }),
+  ruleJson: text("rule_json").notNull(),
+  pendingPointsTenths: integer("pending_points_tenths").notNull().default(0),
+  pointsTenths: integer("points_tenths").notNull().default(0),
+}, t => [uniqueIndex("weekly_consistency_profile_week").on(t.profileId, t.weekStart)]);
+
 export const schemaTables = [
-  teamRegistration, passwordResets, authLimits, playerLoginLinks,
+  weeklyConsistency, teamRegistration, passwordResets, authLimits, playerLoginLinks,
   clubs,
   users,
   credentials,

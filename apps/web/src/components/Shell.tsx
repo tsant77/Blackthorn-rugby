@@ -53,6 +53,7 @@ export function Shell() {
           {staff ? <SideLink to="/moderate">Moderate</SideLink> : null}
           {staff ? <SideLink to="/members">Members</SideLink> : null}
           {me?.membership.role === "admin" ? <SideLink to="/rules">Rules</SideLink> : null}
+          {me?.membership.role === "admin" ? <SideLink to="/scoring-settings">Scoring Settings</SideLink> : null}
           {staff ? <SideLink to="/squad">Squad</SideLink> : null}
           {me?.membership.role === "admin" ? <SideLink to="/registration">Registration</SideLink> : null}
           {me?.membership.role === "admin" ? <SideLink to="/invite">Invite</SideLink> : null}
@@ -75,6 +76,7 @@ export function Shell() {
             {staff ? <SideLink to="/moderate">Moderate</SideLink> : null}
             {staff ? <SideLink to="/members">Members</SideLink> : null}
             {me?.membership.role === "admin" ? <SideLink to="/rules">Rules</SideLink> : null}
+          {me?.membership.role === "admin" ? <SideLink to="/scoring-settings">Scoring Settings</SideLink> : null}
             {staff ? <SideLink to="/squad">Squad</SideLink> : null}
             {me?.membership.role === "admin" ? <SideLink to="/registration">Registration</SideLink> : null}
           {me?.membership.role === "admin" ? <SideLink to="/invite">Invite</SideLink> : null}

@@ -29,6 +29,7 @@ export function openTestDatabase(): D1Database {
     };
   }
 
+  let batchTail = Promise.resolve();
   return {
     prepare(sql: string) {
       return {
@@ -38,6 +39,10 @@ export function openTestDatabase(): D1Database {
       };
     },
     async batch<T>(statements: { run: () => Promise<T> }[]) {
+      const previous = batchTail;
+      let release!: () => void;
+      batchTail = new Promise<void>(resolve => { release = resolve; });
+      await previous;
       sqlite.exec("BEGIN");
       try {
         const results: T[] = [];
@@ -47,7 +52,7 @@ export function openTestDatabase(): D1Database {
       } catch (error) {
         sqlite.exec("ROLLBACK");
         throw error;
-      }
+      } finally { release(); }
     },
     async exec() {
       return { count: 0, duration: 0 };

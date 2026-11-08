@@ -107,3 +107,5 @@ Owner decisions are in `docs/DECISIONS.md`.
 The service worker and any deploy. See `docs/DEPLOYMENT.md`.
 
 Authentication and the approval-gated development rollout are documented in [Team rollout](docs/TEAM_ROLLOUT.md). The actual development Worker 10 ms CPU benchmark is pending deployment approval.
+
+Fitness rates, Club Scoring Settings, weekly consistency, historical award preservation, training indicators, and the approval-gated development plan are documented in [Fitness scoring rollout](docs/FITNESS_SCORING_ROLLOUT.md). Scoring is a separate PR coordinated with the merged authentication change.

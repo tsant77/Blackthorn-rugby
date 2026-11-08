@@ -9,7 +9,7 @@ import type {
   TypeRule,
   WorkoutDraft,
 } from "./types";
-import { INTENSITIES } from "./types";
+import { INTENSITIES, FITNESS_CATEGORIES } from "./types";
 
 const COUNTED = new Set(["submitted", "approved"]);
 const CLIENT_REQUEST_ID = /^[A-Za-z0-9_-]{8,80}$/;
@@ -158,14 +158,14 @@ function award(input: ScoreInput): ScoreDecision {
   };
 }
 
-function validateRule(rule: ScoringRule | undefined): string | null {
+export function validateRule(rule: ScoringRule | undefined): string | null {
   if (!rule || typeof rule !== "object") return "Scoring rule is missing.";
   if (!Number.isInteger(rule.version) || rule.version < 1) return "Scoring rule version is invalid.";
   if (rule.status !== "draft" && rule.status !== "active" && rule.status !== "retired") {
     return "Scoring rule status is invalid.";
   }
-  if (!inRange(rule.dailyCapTenths, 1, 1_000)) return "Daily cap is outside the allowed range.";
-  if (!inRange(rule.sessionCapTenths, 1, 1_000)) return "Session cap is outside the allowed range.";
+  if (!inRange(rule.dailyCapTenths, 1, 10_000)) return "Daily cap is outside the allowed range.";
+  if (!inRange(rule.sessionCapTenths, 1, 10_000)) return "Session cap is outside the allowed range.";
   if (rule.sessionCapTenths > rule.dailyCapTenths) return "Session cap cannot exceed the daily cap.";
   if (!inRange(rule.backdateDays, 0, 14)) return "Backdate window is outside the allowed range.";
   if (!inRange(rule.minDurationMin, 1, 240) || !inRange(rule.maxDurationMin, 1, 240)) {
@@ -176,10 +176,19 @@ function validateRule(rule: ScoringRule | undefined): string | null {
   if (!inRange(rule.duplicateStartWindowMin, 0, 180)) return "Duplicate window is outside the allowed range.";
   if (!inRange(rule.maxNotesLength, 1, 2_000)) return "Notes limit is outside the allowed range.";
   if (!inRange(rule.maxLoadGrams, 1, 500_000)) return "Load limit is outside the allowed range.";
-  if (!rule.types || typeof rule.types !== "object") return "Scoring rule has no workout types.";
+  if (!rule.types || typeof rule.types !== "object" || Array.isArray(rule.types)) return "Scoring rule has no workout types.";
 
-  for (const [name, typeRule] of Object.entries(rule.types)) {
-    if (!typeRule || !inRange(typeRule.multiplierHundredths, 1, 1_000)) {
+  const entries = Object.entries(rule.types);
+  if (entries.length < 1 || entries.length > 32) return "Configure 1–32 activity types.";
+  for (const [name, typeRule] of entries) {
+    if (!typeRule || typeof typeRule!=="object" || Array.isArray(typeRule)) return "Invalid activity configuration.";
+    if (!/^[a-z][a-z0-9_]{0,39}$/.test(name) || ["constructor", "prototype", "__proto__"].includes(name)) return "Invalid activity identifier.";
+    if (typeRule.label !== undefined && (typeof typeRule.label !== "string" || !typeRule.label.trim() || typeRule.label.length > 60)) return "Activity labels must contain 1–60 characters.";
+    if (typeRule.enabled !== undefined && typeof typeRule.enabled !== "boolean") return "Invalid activity state.";
+    if (typeRule.categories !== undefined && (!Array.isArray(typeRule.categories) || !typeRule.categories.length || new Set(typeRule.categories).size !== typeRule.categories.length || typeRule.categories.some(v => !FITNESS_CATEGORIES.includes(v)))) return "Choose valid training categories.";
+    if (typeof typeRule.allowsDistance !== "boolean") return "Invalid distance setting.";
+    for (const key of ["maxDistanceM", "minPaceSecPerKm", "minSplitSecPer500"] as const) if (typeRule[key] !== null && !inRange(typeRule[key], 1, 200_000)) return "Invalid measurement limit.";
+    if (!typeRule || !inRange(typeRule.multiplierHundredths, 1, 10_000)) {
       return `Multiplier for ${name} is outside the allowed range.`;
     }
   }
@@ -192,6 +201,17 @@ function validateRule(rule: ScoringRule | undefined): string | null {
     }
   }
 
+  if (rule.consistency !== undefined) {
+    if (!Array.isArray(rule.consistency) || rule.consistency.length > 4) return "Invalid consistency tiers.";
+    let days = 1, points = -1;
+    for (const tier of rule.consistency) {
+      if (!tier || !inRange(tier.days, 2, 5) || !inRange(tier.pointsTenths, 0, 200) || tier.days <= days || tier.pointsTenths < points) return "Consistency tiers must increase, reward 2–5 days, and stay within 20 points.";
+      days = tier.days; points = tier.pointsTenths;
+    }
+    if (!inRange(rule.consistencyMinMinutes, 10, 60)) return "Consistency days require 10–60 minutes.";
+  }
+  const weights = INTENSITIES.map(i => rule.intensityHundredths[i]);
+  if (weights.some((v, i) => i > 0 && v < weights[i - 1]!)) return "Intensity multipliers must be ordered.";
   if (!Array.isArray(rule.allowedWhenLimited)) return "Limited-activity list is invalid.";
   for (const typeName of rule.allowedWhenLimited) {
     if (!rule.types[typeName]) return "Limited-activity list names an unknown workout type.";
@@ -202,7 +222,7 @@ function validateRule(rule: ScoringRule | undefined): string | null {
 function validateDraft(input: ScoreInput): { code: ScoreDecision["rejectCode"]; message: string } | null {
   const workout = input.workout;
   const rule = input.rule;
-  if (!workout || typeof workout.type !== "string" || !rule.types[workout.type]) {
+  if (!workout || typeof workout.type !== "string" || (!Object.hasOwn(rule.types, workout.type) || rule.types[workout.type]!.enabled === false)) {
     return { code: "invalid_type", message: "Choose a supported workout type." };
   }
   if (typeof workout.occurredOn !== "string" || !isRealCivilDate(workout.occurredOn)) {

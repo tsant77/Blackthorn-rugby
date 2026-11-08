@@ -1,3 +1,5 @@
+import { ruleForDate } from "./scoring-rules";
+import { consistencyStatements, dailyCapStatement, revisionGuard, mutationConflict } from "./fitness";
 import type { Context, Hono } from "hono";
 import {
   addDays,
@@ -10,7 +12,6 @@ import {
   scoreWorkout,
   type Intensity,
   type PriorWorkout,
-  type ScoringRule,
 } from "@blackthorn/scoring";
 import { clubCatalog } from "@blackthorn/db/catalog";
 import type { Env } from "./app";
@@ -32,6 +33,7 @@ interface PlayerSession {
 interface WorkoutRow {
   id: string;
   type: string;
+  activity_label: string;
   occurred_on: string;
   duration_min: number;
   intensity: string | null;
@@ -56,6 +58,19 @@ export function registerWorkoutRoutes(
     return c.json({ today: context.today, minDate: context.minDate, workouts, estimateRule: context.rule });
   });
 
+  app.get("/api/scoring-estimate", async c => {
+    const session = await currentSession(c);
+    if (!session?.profile_id) return c.json({ error: "Sign in required." }, 401);
+    const context = await scoringContext(c.env.DB);
+    const date = c.req.query("date") ?? context.today;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: "Invalid date." }, 400);
+    const id = c.req.query("workoutId");
+    const owned = id ? await ownWorkout(c.env.DB,id,session.profile_id) : null;
+    if (id && !owned) return c.json({ error: "Workout not found." }, 404);
+    const selected = await ruleForDate(c.env.DB,date,owned?.rule_version_id ?? undefined);
+    return c.json({ rule: selected.rule });
+  });
+
   app.post("/api/workouts", async (c) => {
     const session = await requirePlayer(c, currentSession);
     if (session instanceof Response) return session;
@@ -70,9 +85,11 @@ export function registerWorkoutRoutes(
     const context = await scoringContext(c.env.DB);
     const draft = draftFromBody(body, context.today);
     if (!draft) return c.json({ error: "Check the duration, type, and date." }, 400);
+    const selected = await ruleForDate(c.env.DB, draft.workout.occurredOn);
+    context.rule = selected.rule; context.ruleId = selected.id;
     const existing = draft.clientRequestId
       ? await c.env.DB.prepare(
-        "SELECT id FROM workouts WHERE player_profile_id = ? AND client_request_id = ? AND status != 'voided'",
+        "SELECT id FROM workouts WHERE player_profile_id = ? AND client_request_id = ? ",
       ).bind(session.profile_id, draft.clientRequestId).first<{ id: string }>()
       : null;
     if (existing) return c.json(await workoutPayload(c.env.DB, existing.id, session.profile_id!, { idempotent: true }));
@@ -113,16 +130,26 @@ export function registerWorkoutRoutes(
         now,
         now,
       ),
-      ...ledgerInserts(c.env.DB, session, id, context.ruleId, decision.transactions, now),
+      ...ledgerInserts(c.env.DB, session, id, context.ruleId, decision.transactions.filter(t => t.reasonCode !== "daily_cap"), now),
+      dailyCapStatement(c.env.DB, session.profile_id!, id, context.ruleId, draft.workout.occurredOn, context.rule.dailyCapTenths, session.user_id, now),
+      ...await consistencyStatements(c.env.DB, session.profile_id!, [draft.workout.occurredOn], session.user_id, now),
       audit(c.env.DB, session.user_id, "workout_logged", id, null, { awardedPointsTenths: decision.awardedPointsTenths }, now),
     ];
-    await c.env.DB.batch(statements);
+    try { await c.env.DB.batch(statements); } catch (error) {
+      if (mutationConflict(error)) return c.json({ error: "Workout changed. Reload and try again." }, 409);
+      if (draft.clientRequestId) {
+        const existing = await c.env.DB.prepare("SELECT id FROM workouts WHERE player_profile_id=? AND client_request_id=?").bind(session.profile_id,draft.clientRequestId).first<{ id: string }>();
+        if (existing) return c.json(await workoutPayload(c.env.DB,existing.id,session.profile_id!,{ idempotent:true }));
+      }
+      throw error;
+    }
     await syncBadges(c.env, session.profile_id!, now);
+    const actual = await netPoints(c.env.DB, id);
     return c.json({
       ...(await workoutPayload(c.env.DB, id, session.profile_id!)),
-      awardedPointsTenths: decision.awardedPointsTenths,
+      awardedPointsTenths: actual,
       grossPointsTenths: decision.grossPointsTenths,
-      flags: decision.flags,
+      flags: [...decision.flags.filter(f=>f!=="daily_cap"),...(actual < Math.min(decision.grossPointsTenths,context.rule.sessionCapTenths)?["daily_cap"]:[])],
     }, 201);
   });
 
@@ -142,6 +169,9 @@ export function registerWorkoutRoutes(
     const context = await scoringContext(c.env.DB);
     const draft = draftFromBody(body, context.today);
     if (!draft) return c.json({ error: "Check the duration, type, and date." }, 400);
+    const selected = await ruleForDate(c.env.DB, draft.workout.occurredOn, owned.rule_version_id ?? undefined);
+    if (selected.effectiveOn && draft.workout.occurredOn < selected.effectiveOn) return c.json({ error: "An edit cannot move a workout before its scoring version. Delete it and log a new workout instead." }, 400);
+    context.rule = selected.rule; context.ruleId = selected.id;
     const decision = scoreWorkout({
       workout: { ...draft.workout, clientRequestId: null },
       athlete: athleteOf(session),
@@ -156,6 +186,7 @@ export function registerWorkoutRoutes(
     const now = Date.now();
     const net = await netPoints(c.env.DB, owned.id);
     const statements = [
+      revisionGuard(c.env.DB, owned.id, owned.scoring_revision, "submitted"),
       c.env.DB.prepare(
         `UPDATE workouts SET type = ?, occurred_on = ?, duration_min = ?, intensity = ?, distance_m = ?, notes = ?,
           rule_version_id = ?, updated_at = ? WHERE id = ?`,
@@ -171,15 +202,21 @@ export function registerWorkoutRoutes(
         owned.id,
       ),
       ...reversalInsert(c.env.DB, session, owned.id, context.ruleId, net, now),
-      ...ledgerInserts(c.env.DB, session, owned.id, context.ruleId, decision.transactions, now),
+      ...ledgerInserts(c.env.DB, session, owned.id, context.ruleId, decision.transactions.filter(t => t.reasonCode !== "daily_cap"), now),
+      dailyCapStatement(c.env.DB, session.profile_id!, owned.id, context.ruleId, draft.workout.occurredOn, context.rule.dailyCapTenths, session.user_id, now),
+      ...await consistencyStatements(c.env.DB, session.profile_id!, [owned.occurred_on, draft.workout.occurredOn], session.user_id, now),
       audit(c.env.DB, session.user_id, "workout_edited", owned.id, { netPointsTenths: net }, { awardedPointsTenths: decision.awardedPointsTenths }, now),
     ];
-    await c.env.DB.batch(statements);
+    try { await c.env.DB.batch(statements); } catch (error) {
+      if (mutationConflict(error)) return c.json({ error: "Workout changed. Reload and try again." }, 409);
+      throw error;
+    }
     await syncBadges(c.env, session.profile_id!, now);
+    const actual = await netPoints(c.env.DB, owned.id);
     return c.json({
       ...(await workoutPayload(c.env.DB, owned.id, session.profile_id!)),
-      awardedPointsTenths: decision.awardedPointsTenths,
-      flags: decision.flags,
+      awardedPointsTenths: actual,
+      flags: [...decision.flags.filter(f=>f!=="daily_cap"),...(actual < Math.min(decision.grossPointsTenths,context.rule.sessionCapTenths)?["daily_cap"]:[])],
     });
   });
 
@@ -189,13 +226,16 @@ export function registerWorkoutRoutes(
     const owned = await ownWorkout(c.env.DB, c.req.param("id"), session.profile_id!);
     if (!owned) return c.json({ error: "Workout not found." }, 404);
     const context = await scoringContext(c.env.DB);
+    context.ruleId = owned.rule_version_id ?? context.ruleId;
     const now = Date.now();
     const net = await netPoints(c.env.DB, owned.id);
-    await c.env.DB.batch([
+    try { await c.env.DB.batch([
+      revisionGuard(c.env.DB, owned.id, owned.scoring_revision, "submitted"),
       c.env.DB.prepare("UPDATE workouts SET status = 'voided', review_note = 'Deleted by the player', updated_at = ? WHERE id = ?").bind(now, owned.id),
       ...reversalInsert(c.env.DB, session, owned.id, context.ruleId, net, now),
+      ...await consistencyStatements(c.env.DB, session.profile_id!, [owned.occurred_on], session.user_id, now),
       audit(c.env.DB, session.user_id, "workout_deleted", owned.id, { netPointsTenths: net }, { status: "voided" }, now),
-    ]);
+    ]); } catch (error) { if (mutationConflict(error)) return c.json({ error: "Workout changed. Reload and try again." }, 409); throw error; }
     await syncBadges(c.env, session.profile_id!, now);
     return c.json({ ok: true });
   });
@@ -259,13 +299,9 @@ export async function scoringContext(db: D1Database) {
   const club = await db.prepare("SELECT timezone FROM clubs WHERE id = ?").bind(CLUB_ID).first<{ timezone: string }>();
   const timeZone = club?.timezone ?? "America/New_York";
   const today = civilDateInTimeZone(new Date(), timeZone);
-  await promoteDueRules(db, today);
-  const ruleRow = await db.prepare(
-    "SELECT id, version, status, config_json, backdate_days FROM scoring_rule_versions WHERE club_id = ? AND status = 'active'",
-  ).bind(CLUB_ID).first<{ id: string; version: number; status: string; config_json: string; backdate_days: number }>();
-  if (!ruleRow) throw new Error("No active scoring rule.");
-  const parsed = JSON.parse(ruleRow.config_json) as ScoringRule;
-  const rule: ScoringRule = { ...parsed, version: ruleRow.version, status: "active" };
+
+  const selected = await ruleForDate(db, today);
+  const rule = selected.rule;
   const period = await db.prepare(
     "SELECT start_on, end_on FROM competition_periods WHERE club_id = ? AND kind = 'offseason' AND status = 'active'",
   ).bind(CLUB_ID).first<{ start_on: string; end_on: string }>();
@@ -279,7 +315,7 @@ export async function scoringContext(db: D1Database) {
     today,
     minDate: addDays(today, -rule.backdateDays),
     rule,
-    ruleId: ruleRow.id,
+    ruleId: selected.id,
     offseasonStart: period?.start_on ?? null,
     offseasonEnd: period?.end_on ?? null,
     week,
@@ -297,28 +333,6 @@ interface BoardFilter {
 function boardFilter(groupId: string | null, positionId: string | null): BoardFilter {
   if (groupId === "coaches") return { coaches: true, groupId: null, positionId: null };
   return { coaches: false, groupId, positionId };
-}
-
-async function promoteDueRules(db: D1Database, today: string): Promise<void> {
-  const due = await db.prepare(
-    `SELECT id, effective_on FROM scoring_rule_versions
-     WHERE club_id = ? AND status = 'draft' AND effective_on IS NOT NULL AND effective_on <= ?
-     ORDER BY effective_on DESC, version DESC LIMIT 1`,
-  ).bind(CLUB_ID, today).first<{ id: string; effective_on: string }>();
-  if (!due) return;
-  const current = await db.prepare(
-    "SELECT id FROM scoring_rule_versions WHERE club_id = ? AND status = 'active'",
-  ).bind(CLUB_ID).first<{ id: string }>();
-  if (current?.id === due.id) return;
-  const now = Date.now();
-  await db.batch([
-    db.prepare(
-      "UPDATE scoring_rule_versions SET status = 'retired', retired_at = ? WHERE club_id = ? AND status = 'active'",
-    ).bind(now, CLUB_ID),
-    db.prepare(
-      "UPDATE scoring_rule_versions SET status = 'active', activated_at = ? WHERE id = ?",
-    ).bind(now, due.id),
-  ]);
 }
 
 async function standingsFor(db: D1Database, start: string | null, end: string | null, filter: BoardFilter) {
@@ -504,7 +518,6 @@ function ledgerInserts(
 }
 
 function reversalInsert(db: D1Database, session: PlayerSession, workoutId: string, ruleId: string, net: number, now: number) {
-  if (net === 0) return [];
   const reversal = planReversal(net);
   return ledgerInserts(db, session, workoutId, ruleId, [reversal], now);
 }
@@ -512,7 +525,7 @@ function reversalInsert(db: D1Database, session: PlayerSession, workoutId: strin
 function audit(db: D1Database, userId: string, action: string, entityId: string, before: unknown, after: unknown, now: number) {
   return db.prepare(
     `INSERT INTO audit_events (id, club_id, actor_user_id, action, entity_type, entity_id, before_json, after_json, created_at)
-     VALUES (?, ?, ?, ?, 'workout', ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, 'workout', ?, ?, json_set(?,'$.awardedPointsTenths',(SELECT COALESCE(SUM(points_tenths),0) FROM point_transactions WHERE workout_id=?)), ?)`,
   ).bind(
     crypto.randomUUID(),
     CLUB_ID,
@@ -521,6 +534,7 @@ function audit(db: D1Database, userId: string, action: string, entityId: string,
     entityId,
     before === null ? null : JSON.stringify(before),
     JSON.stringify(after),
+    entityId,
     now,
   );
 }
@@ -530,17 +544,18 @@ async function netPoints(db: D1Database, workoutId: string): Promise<number> {
   return Number(row?.net ?? 0);
 }
 
-async function ownWorkout(db: D1Database, id: string, profileId: string): Promise<{ id: string } | null> {
+async function ownWorkout(db: D1Database, id: string, profileId: string): Promise<{ id: string; rule_version_id: string | null; occurred_on: string; scoring_revision: number } | null> {
   return db.prepare(
-    "SELECT id FROM workouts WHERE id = ? AND player_profile_id = ? AND status = 'submitted'",
-  ).bind(id, profileId).first<{ id: string }>();
+    "SELECT id,rule_version_id,occurred_on,scoring_revision FROM workouts WHERE id = ? AND player_profile_id = ? AND status = 'submitted'",
+  ).bind(id, profileId).first<{ id: string; rule_version_id: string | null; occurred_on: string; scoring_revision: number }>();
 }
 
 async function listOwn(db: D1Database, profileId: string): Promise<WorkoutRow[]> {
   const rows = await db.prepare(
-    `SELECT w.id, w.type, w.occurred_on, w.duration_min, w.intensity, w.distance_m, w.notes, w.status, w.review_note, w.created_at,
+    `SELECT w.id, w.type, COALESCE(json_extract(r.config_json, '$.types.' || w.type || '.label'), replace(w.type,'_',' ')) AS activity_label, w.occurred_on, w.duration_min, w.intensity, w.distance_m, w.notes, w.status, w.review_note, w.created_at,
             COALESCE(SUM(t.points_tenths), 0) AS points_tenths
      FROM workouts w
+     LEFT JOIN scoring_rule_versions r ON r.id=w.rule_version_id
      LEFT JOIN point_transactions t ON t.workout_id = w.id
      WHERE w.player_profile_id = ?
      GROUP BY w.id, w.type, w.occurred_on, w.duration_min, w.intensity, w.distance_m, w.notes, w.status, w.review_note, w.created_at

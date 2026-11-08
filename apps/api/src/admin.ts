@@ -1,3 +1,6 @@
+import { publishScoringRule } from "./scoring-settings";
+import { consistencyStatements, revisionGuard, mutationConflict, dailyCapStatement } from "./fitness";
+import { ruleForDate } from "./scoring-rules";
 import type { Context, Hono } from "hono";
 import { clubCatalog } from "@blackthorn/db/catalog";
 import { isRealCivilDate } from "@blackthorn/scoring";
@@ -50,12 +53,12 @@ export function registerAdminRoutes(
       return c.json({ error: "Add a short reason." }, 400);
     }
     const workout = await c.env.DB.prepare(
-      `SELECT w.id, w.status, w.player_profile_id, w.rule_version_id
+      `SELECT w.id, w.status, w.player_profile_id, w.rule_version_id, w.occurred_on, w.scoring_revision
        FROM workouts w
        JOIN player_profiles pr ON pr.id = w.player_profile_id
        JOIN club_memberships m ON m.id = pr.membership_id AND m.club_id = ?
        WHERE w.id = ?`,
-    ).bind(CLUB_ID, c.req.param("id")).first<{ id: string; status: string; player_profile_id: string; rule_version_id: string }>();
+    ).bind(CLUB_ID, c.req.param("id")).first<{ id: string; status: string; player_profile_id: string; rule_version_id: string; occurred_on: string; scoring_revision: number }>();
     if (!workout) return c.json({ error: "Workout not found." }, 404);
     const now = Date.now();
     const net = await netPoints(c.env.DB, workout.id);
@@ -65,16 +68,19 @@ export function registerAdminRoutes(
       }
       const reversed = await c.env.DB.prepare(
         `SELECT points_tenths FROM point_transactions
-         WHERE workout_id = ? AND kind = 'reversal' ORDER BY created_at DESC LIMIT 1`,
+         WHERE workout_id = ? AND kind = 'reversal' ORDER BY created_at DESC, rowid DESC LIMIT 1`,
       ).bind(workout.id).first<{ points_tenths: number }>();
       const restore = reversed ? -Number(reversed.points_tenths) : 0;
-      await c.env.DB.batch([
+      try { await c.env.DB.batch([
+        revisionGuard(c.env.DB, workout.id, workout.scoring_revision, workout.status),
         c.env.DB.prepare(
           "UPDATE workouts SET status = 'submitted', review_note = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ? WHERE id = ?",
         ).bind(reason || "Restored", session.user_id, now, now, workout.id),
         ...(restore === 0 ? [] : [ledger(c.env.DB, workout, session.user_id, restore, "adjustment", "restore", reason || "Restored", now)]),
+        dailyCapStatement(c.env.DB,workout.player_profile_id,workout.id,workout.rule_version_id,workout.occurred_on,(await ruleForDate(c.env.DB,workout.occurred_on,workout.rule_version_id)).rule.dailyCapTenths,session.user_id,now),
+        ...await consistencyStatements(c.env.DB,workout.player_profile_id,[workout.occurred_on],session.user_id,now),
         audit(c.env.DB, session.user_id, "workout_restored", workout.id, { status: workout.status }, { status: "submitted", reason }, now),
-      ]);
+      ]); } catch (error) { if (mutationConflict(error)) return c.json({ error: "Workout changed. Reload and try again." },409); throw error; }
       await notifyReview(c.env, workout.id, "restore", reason || "Restored", now);
       await syncBadges(c.env, workout.player_profile_id, now);
       return c.json({ ok: true });
@@ -83,13 +89,15 @@ export function registerAdminRoutes(
       return c.json({ error: "That workout is already closed." }, 409);
     }
     const status = action === "reject" ? "rejected" : "voided";
-    await c.env.DB.batch([
+    try { await c.env.DB.batch([
+      revisionGuard(c.env.DB, workout.id, workout.scoring_revision, workout.status),
       c.env.DB.prepare(
         "UPDATE workouts SET status = ?, review_note = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ? WHERE id = ?",
       ).bind(status, reason, session.user_id, now, now, workout.id),
-      ...(net === 0 ? [] : [ledger(c.env.DB, workout, session.user_id, -net, "reversal", action, reason, now)]),
+      ledger(c.env.DB, workout, session.user_id, -net, "reversal", action, reason, now),
+      ...await consistencyStatements(c.env.DB,workout.player_profile_id,[workout.occurred_on],session.user_id,now),
       audit(c.env.DB, session.user_id, `workout_${action}`, workout.id, { netPointsTenths: net }, { status, reason }, now),
-    ]);
+    ]); } catch (error) { if (mutationConflict(error)) return c.json({ error: "Workout changed. Reload and try again." },409); throw error; }
     await notifyReview(c.env, workout.id, action, reason, now);
     await syncBadges(c.env, workout.player_profile_id, now);
     return c.json({ ok: true });
@@ -216,60 +224,18 @@ export function registerAdminRoutes(
   app.get("/api/rules", async (c) => {
     const session = await requireStaff(c, currentSession);
     if (session instanceof Response) return session;
-    await scoringContext(c.env.DB);
+    const context = await scoringContext(c.env.DB);
     const rows = await c.env.DB.prepare(
       `SELECT id, version, status, daily_cap_tenths, session_cap_tenths, weekly_load_limit, effective_on, notes, created_at
        FROM scoring_rule_versions WHERE club_id = ? ORDER BY version DESC`,
     ).bind(CLUB_ID).all();
-    return c.json({ rules: rows.results });
+    return c.json({ rules: rows.results.map(row => ({ ...row, status:row.id===context.ruleId?"active":String(row.effective_on??"")>context.today?"draft":"retired" })) });
   });
 
   app.post("/api/rules", async (c) => {
     const session = await requireAdmin(c, currentSession);
     if (session instanceof Response) return session;
-    const body = await readJson(c);
-    const daily = Number(body?.dailyCapTenths);
-    const sessionCap = Number(body?.sessionCapTenths);
-    const weekly = Number(body?.weeklyLoadLimit);
-    const effectiveOn = typeof body?.effectiveOn === "string" ? body.effectiveOn : "";
-    if (!Number.isInteger(daily) || !Number.isInteger(sessionCap) || !Number.isInteger(weekly)) {
-      return c.json({ error: "Caps must be whole numbers." }, 400);
-    }
-    if (!isRealCivilDate(effectiveOn)) return c.json({ error: "Choose an effective date." }, 400);
-    const context = await scoringContext(c.env.DB);
-    if (effectiveOn < context.today) return c.json({ error: "Effective date must be today or later." }, 400);
-    const active = await c.env.DB.prepare(
-      "SELECT id, version, config_json FROM scoring_rule_versions WHERE club_id = ? AND status = 'active'",
-    ).bind(CLUB_ID).first<{ id: string; version: number; config_json: string }>();
-    if (!active) return c.json({ error: "No active rule." }, 409);
-    const config = JSON.parse(active.config_json) as { version: number; dailyCapTenths: number; sessionCapTenths: number; weeklyLoadLimit: number };
-    const version = active.version + 1;
-    config.version = version;
-    config.dailyCapTenths = daily;
-    config.sessionCapTenths = sessionCap;
-    config.weeklyLoadLimit = weekly;
-    const now = Date.now();
-    const id = crypto.randomUUID();
-    const activateNow = effectiveOn <= context.today;
-    const statements = [];
-    if (activateNow) {
-      statements.push(c.env.DB.prepare(
-        "UPDATE scoring_rule_versions SET status = 'retired', retired_at = ? WHERE club_id = ? AND status = 'active'",
-      ).bind(now, CLUB_ID));
-    }
-    statements.push(c.env.DB.prepare(
-      `INSERT INTO scoring_rule_versions (
-        id, club_id, version, status, daily_cap_tenths, session_cap_tenths, weekly_load_limit, backdate_days,
-        config_json, notes, effective_on, created_by, created_at, activated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      id, CLUB_ID, version, activateNow ? "active" : "draft", daily, sessionCap, weekly, context.rule.backdateDays,
-      JSON.stringify(config), typeof body?.notes === "string" ? body.notes.slice(0, 200) : null, effectiveOn, session.user_id, now,
-      activateNow ? now : null,
-    ));
-    await c.env.DB.batch(statements);
-    await runAudit(c.env.DB, session.user_id, "rule_created", "scoring_rule_version", id, null, { version, effectiveOn, daily, sessionCap, weekly }, now);
-    return c.json({ ok: true, id, status: activateNow ? "active" : "draft" }, 201);
+    return publishScoringRule(c, session.user_id);
   });
 
   app.post("/api/adjustments", async (c) => {

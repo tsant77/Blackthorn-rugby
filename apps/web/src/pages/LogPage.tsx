@@ -21,6 +21,7 @@ const INTENSITIES = ["easy", "moderate", "hard", "max"] as const;
 interface Workout {
   id: string;
   type: string;
+  activity_label?: string;
   occurred_on: string;
   duration_min: number;
   intensity: string | null;
@@ -52,7 +53,8 @@ export function LogPage() {
   const multiplier = estimateRule?.types[type]?.multiplierHundredths;
   const estimate = estimateRule && multiplier != null && Number.isInteger(duration) && duration >= 1 && duration <= 240
     ? Math.min(estimateRule.sessionCapTenths, formulaTenths(duration, multiplier, estimateRule.intensityHundredths[intensity])) : null;
-  const distance = type === "running" || type === "rower";
+  const distance = estimateRule?.types[type]?.allowsDistance ?? (type === "running" || type === "rower");
+  const types = estimateRule ? Object.entries(estimateRule.types).filter(([,r])=>r.enabled!==false).map(([id,r])=>[id,r.label ?? TYPES.find(t=>t[0]===id)?.[1] ?? id.replaceAll("_"," ")] as const) : TYPES;
 
   async function load() {
     const body = await api<{ today: string; minDate: string; workouts: Workout[]; estimateRule?: ScoringRule }>("/api/workouts");
@@ -66,6 +68,14 @@ export function LogPage() {
   useEffect(() => {
     void load().catch((caught: unknown) => setError(caught instanceof ApiError ? caught.message : "Could not load workouts."));
   }, []);
+
+  useEffect(() => {
+    if (!occurredOn) return;
+    let active = true;
+    const query = new URLSearchParams({ date:occurredOn,...(editing?{workoutId:editing}:{}) });
+    void api<{ rule:ScoringRule }>(`/api/scoring-estimate?${query}`).then(body=>{if(active)setEstimateRule(body.rule);}).catch(()=>{if(active)setError("Could not load scoring for that date.");});
+    return ()=>{active=false;};
+  },[occurredOn,editing]);
 
   function resetForm() {
     request.current = null;
@@ -152,8 +162,8 @@ export function LogPage() {
         <fieldset disabled={pending} className="flex min-w-0 flex-col gap-s2">
         <h2 className="section-label">01 <span>Choose your activity</span></h2>
         <div className="activity-grid" role="group" aria-label="Workout type">
-          {TYPES.map(([value, label], index) => {
-            const Icon = ICONS[index]!;
+          {types.map(([value, label], index) => {
+            const Icon = ICONS[index] ?? Timer;
             return (
             <button
               key={value}
@@ -256,7 +266,7 @@ export function LogPage() {
           {workouts.map((workout) => (
             <li key={workout.id} className="session-card">
               <div className="flex-1">
-                <p className="font-heading font-semibold capitalize">{workout.type.replaceAll("_", " ")}</p>
+                <p className="font-heading font-semibold capitalize">{workout.activity_label ?? workout.type.replaceAll("_", " ")}</p>
                 <p className="text-sm text-quiet">{displayDate(workout.occurred_on)} · {workout.duration_min} min · {sessionLabel(workout.status, workout.review_note)}</p>
                 <p className="mt-half text-xs capitalize text-sage">{workout.intensity}{workout.distance_miles != null ? ` · ${workout.distance_miles} miles` : ""}</p>
                 {workout.notes ? <p className="mt-s1 text-sm text-quiet break-words">{workout.notes}</p> : null}

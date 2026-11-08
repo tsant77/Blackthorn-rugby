@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultRule } from "./defaults";
+import { legacyRule as defaultRule } from "./defaults";
 import { formatPoints, planReversal, scoreWorkout } from "./engine";
 import { assertClientCannotSetPoints, ClientPointsError } from "./index";
 import type { PriorWorkout, ScoreInput, ScoringRule, WorkoutDraft } from "./types";
