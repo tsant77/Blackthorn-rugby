@@ -2,11 +2,13 @@
 name = "blackthorn-rugby"
 main = "src/index.ts"
 compatibility_date = "2026-11-08"
+compatibility_flags = ["nodejs_compat"]
 upload_source_maps = true
 workers_dev = true
 
 [observability]
 enabled = true
+redact_query_string = true
 
 [observability.traces]
 enabled = true
@@ -41,10 +43,12 @@ name = "EMAIL"
 name = "blackthorn-rugby-dev"
 main = "src/index.ts"
 compatibility_date = "2026-11-08"
+compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
 [env.dev.observability]
 enabled = true
+redact_query_string = true
 
 [env.dev.assets]
 directory = "../web/dist"

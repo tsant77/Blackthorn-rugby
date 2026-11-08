@@ -1,9 +1,14 @@
+import { Award, Flame, Trophy, Medal, Footprints, Layers, LockKeyhole, Check } from "lucide-react";
+import { formatPoints } from "@blackthorn/scoring";
+import { AccountCredentials } from "../components/AccountCredentials";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, ApiError } from "../api";
+import { api, ApiError, type RosterPosition } from "../api";
 import { ShareLink } from "../components/ShareLink";
 import { useSession } from "../session";
 
+interface Badge { key: string; name: string; description: string; awarded_at: number | null; progress: { current: number; target: number; unit: string } }
+const badgeIcons = [Award, Medal, Trophy, Flame, Flame, Layers, Footprints];
 export function ProfilePage() {
   const { me, refresh } = useSession();
   const navigate = useNavigate();
@@ -11,18 +16,32 @@ export function ProfilePage() {
   const [injuryNote, setInjuryNote] = useState(me?.profile?.injuryNote ?? "");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [badges, setBadges] = useState<{ key: string; name: string; description: string; awarded_at: number | null }[]>([]);
-  const [emailOn, setEmailOn] = useState(me?.user.emailNotifications ?? false);
-  const [emailEnabled, setEmailEnabled] = useState(false);
+  const [badges, setBadges] = useState<Badge[]>([]);
+  const [summary, setSummary] = useState<{ points: number; sessions: number; streak: number; rank: number | null } | null>(null);
+  const [identity, setIdentity] = useState<{ position: string; group: string } | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [deviceUrl, setDeviceUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    setEmailOn(me?.user.emailNotifications ?? false);
-    void api<{ emailEnabled: boolean }>("/api/auth/options").then((body) => setEmailEnabled(body.emailEnabled)).catch(() => setEmailEnabled(false));
+
     if (!me?.profile) return;
     setInjuryStatus(me.profile.injuryStatus);
     setInjuryNote(me.profile.injuryNote ?? "");
-    void api<{ badges: { key: string; name: string; description: string; awarded_at: number | null }[] }>("/api/badges").then((body) => setBadges(body.badges));
+    let active = true;
+    setProfileError(null);
+    void Promise.all([
+      api<{ badges: Badge[] }>("/api/badges"),
+      api<{ offseason: { pointsTenths: number; sessions: number }; streak: number }>("/api/dashboard"),
+      api<{ standings: { profile_id: string; rank: number }[] }>("/api/leaderboard?period=week"),
+      api<{ positions: RosterPosition[] }>("/api/roster-options"),
+    ]).then(([awards, dash, board, roster]) => {
+      if (!active) return;
+      setBadges(awards.badges);
+      setSummary({ points: dash.offseason.pointsTenths, sessions: dash.offseason.sessions, streak: dash.streak, rank: board.standings.find(row => row.profile_id === me.profile?.id)?.rank ?? null });
+      const position = roster.positions.find(p => p.id === me.profile?.positionId);
+      setIdentity({ position: position?.name ?? "No position", group: position?.group_name ?? "Coaches" });
+    }).catch(() => { if (active) setProfileError("Could not load player statistics and achievements."); });
+    return () => { active = false; };
   }, [me]);
 
   async function saveInjury() {
@@ -48,22 +67,37 @@ export function ProfilePage() {
   return (
     <main className="mx-auto flex max-w-lg flex-col gap-s3 px-s2 py-s4">
       <div><p className="eyebrow">THE PLAYER BEHIND THE POINTS</p><h1 className="font-heading text-2xl font-semibold">You</h1></div>
-      <section className="rounded-md border border-line bg-raised p-s2 shadow-card">
-        <p className="font-heading font-semibold">{me?.profile?.rosterName ?? me?.user.name}</p>
-        <p className="text-sm text-quiet">{me?.user.email}</p>
-        <p className="mt-s1 text-sm capitalize text-quiet">{me?.membership.role}</p>
+      <section className="player-identity panel">
+        <div className="player-monogram" aria-hidden="true">{(me?.profile?.rosterName ?? me?.user.name ?? "P").split(" ").map(n => n[0]).slice(0, 2).join("")}</div>
+        <div><h2 className="font-heading text-xl font-semibold break-words">{me?.profile?.rosterName ?? me?.user.name}</h2>
+          {identity ? <p className="text-sm text-quiet">{identity.position} · {identity.group}</p> : null}
+          <p className="mt-half text-xs uppercase tracking-widest text-sage">{me?.membership.role}</p>
+        </div>
       </section>
-      <section className="rounded-md border border-line bg-raised p-s2">
-        <h2 className="font-heading font-semibold">Badges</h2>
-        <ul className="mt-s2 flex flex-col gap-s1">
-          {badges.map((badge) => (
-            <li key={badge.key}>
-              <p className="font-heading font-semibold">{badge.name}</p>
-              <p className="text-sm text-quiet">{badge.awarded_at ? "Earned" : "Not yet"} · {badge.description}</p>
-            </li>
-          ))}
+      {profileError ? <p role="alert" className="error-banner">{profileError}</p> : me?.profile && !summary ? <p role="status" className="text-sm text-quiet">Loading player statistics…</p> : null}
+      {summary ? <section className="profile-stats" aria-label="Training statistics">
+        {[["Offseason PTS", formatPoints(summary.points)], ["Workouts", summary.sessions], ["Streak · days", summary.streak], ["This week rank", summary.rank ?? "—"]].map(([label, value]) =>
+          <div key={label}><p className="font-display text-2xl text-gold">{value}</p><h2 className="text-xs text-quiet">{label}</h2></div>)}
+      </section> : null}
+      <section className="flex flex-col gap-s2">
+        <div className="flex justify-between items-center"><h2 className="font-heading font-semibold">Badges</h2><span className="text-xs text-quiet">{badges.filter(b => b.awarded_at).length} / {badges.length} earned</span></div>
+        <ul className="badge-grid">
+          {badges.map((badge, index) => {
+            const Icon = badgeIcons[index % badgeIcons.length]!;
+            const progress = badge.progress;
+            return <li key={badge.key} className={`achievement ${badge.awarded_at ? "earned" : ""}`}>
+              <div className="flex justify-between"><Icon size={26} aria-hidden="true" />{badge.awarded_at ? <Check size={16} aria-label="Earned" /> : <LockKeyhole size={14} aria-hidden="true" />}</div>
+              <h3 className="mt-s1 font-heading text-sm font-semibold">{badge.name}</h3>
+              <p className="mt-half text-xs text-quiet">{badge.awarded_at ? "Earned" : "Not yet"} · {badge.description}</p>
+              {progress && !badge.awarded_at ? <div className="mt-s1">
+                <progress max={progress.target} value={Math.min(progress.current, progress.target)} aria-label={`Progress toward ${badge.name}`} />
+                <p className="mt-half text-xs text-quiet">{progress.current} / {progress.target} {progress.unit}</p>
+              </div> : null}
+            </li>;
+          })}
         </ul>
       </section>
+      <AccountCredentials />
       {me?.profile ? (
         <section className="flex flex-col gap-s2 rounded-md border border-line bg-raised p-s2">
           <h2 className="font-heading font-semibold">Availability</h2>
@@ -107,20 +141,6 @@ export function ProfilePage() {
         </button>
         {deviceUrl ? <ShareLink url={deviceUrl} label="Device sign-in link" /> : null}
       </section>
-      {emailEnabled ? (
-      <label className="flex items-center gap-s2 text-sm">
-        <input
-          type="checkbox"
-          checked={emailOn}
-          onChange={(event) => {
-            const next = event.target.checked;
-            setEmailOn(next);
-            void api("/api/me/notifications", { method: "PATCH", body: JSON.stringify({ emailNotifications: next }) }).then(() => refresh());
-          }}
-        />
-        Email me notifications. Off by default. In-app notices stay on.
-      </label>
-      ) : null}
       <button type="button" onClick={() => void logout()} className="w-fit text-quiet underline">
         Sign out
       </button>

@@ -7,12 +7,16 @@ export function ShareLink({ url, label }: { url: string; label: string }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void QRCode.toDataURL(url, { margin: 1, width: 180, color: { dark: "#121410", light: "#ffffff" } }).then(setQr);
+    setCopied(false);
+    setError(null);
+    void QRCode.toDataURL(url, { margin: 1, width: 180, color: { dark: "#121410", light: "#ffffff" } }).then(setQr).catch(() => setQr(null));
   }, [url]);
 
   async function copy() {
-    await navigator.clipboard.writeText(url);
-    setCopied(true);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true); setError(null);
+    } catch { setError("Could not copy. Select and copy the link above."); }
   }
 
   async function share() {

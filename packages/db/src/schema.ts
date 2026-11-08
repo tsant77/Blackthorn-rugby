@@ -37,14 +37,15 @@ export const users = sqliteTable("users", {
   check("users_status_chk", sql`${table.status} IN ('invited', 'active', 'disabled')`),
 ]);
 
-/** Unused. Access is magic-link only; this table is not written. */
+/** Optional username credentials; legacy accounts can establish them without changing identity. */
 export const credentials = sqliteTable("credentials", {
   userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "restrict" }),
+  username: text("username"),
   passwordHash: text("password_hash"),
   passwordUpdatedAt: integer("password_updated_at", { mode: "timestamp_ms" }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-});
+}, (table) => [uniqueIndex("credentials_username_unique").on(sql`${table.username} COLLATE NOCASE`)]);
 
 export const sessions = sqliteTable("sessions", {
   id: text("id").primaryKey(),
@@ -397,7 +398,37 @@ export const mediaObjects = sqliteTable("media_objects", {
   check("media_objects_size_chk", sql`${table.byteSize} > 0`),
 ]);
 
+
+
+export const teamRegistration = sqliteTable("team_registration", {
+  clubId: text("club_id").primaryKey().references(() => clubs.id, { onDelete: "restrict" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  enabled: integer("enabled").notNull().default(1),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }),
+  createdBy: text("created_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, table => [check("team_registration_enabled_chk", sql`${table.enabled} IN (0,1)`)]);
+
+export const passwordResets = sqliteTable("password_resets", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+  consumedAt: integer("consumed_at", { mode: "timestamp_ms" }),
+  claim: text("claim"),
+  createdBy: text("created_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt: createdAt(),
+}, table => [index("password_resets_user_idx").on(table.userId, table.expiresAt)]);
+
+export const authLimits = sqliteTable("auth_limits", {
+  bucket: text("bucket").primaryKey(),
+  windowStart: integer("window_start").notNull(),
+  attempts: integer("attempts").notNull(),
+});
+
 export const schemaTables = [
+  teamRegistration, passwordResets, authLimits,
   clubs,
   users,
   credentials,

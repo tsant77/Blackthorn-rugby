@@ -6,8 +6,9 @@ export default defineConfig({
   workers: 1,
   timeout: 60_000,
   use: {
+    browserName: process.env.PW_BROWSER === "webkit" ? "webkit" : "chromium",
     baseURL: "http://127.0.0.1:8787",
-    permissions: ["clipboard-read", "clipboard-write"],
+    permissions: process.env.PW_BROWSER === "webkit" ? [] : ["clipboard-read", "clipboard-write"],
   },
   webServer: {
     command: "npm run build --workspace @blackthorn/web && npm run e2e:server --workspace @blackthorn/api",

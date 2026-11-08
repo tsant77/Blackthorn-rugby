@@ -1,3 +1,6 @@
+import { RouteFocus } from "./components/RouteFocus";
+import { AccountAccessPage } from "./pages/AccountAccessPage";
+import { RegistrationAdminPage } from "./pages/RegistrationAdminPage";
 import type { ReactNode } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -26,8 +29,11 @@ export function App() {
   return (
     <ErrorBoundary>
       <SessionProvider>
+        <RouteFocus />
         <Routes>
           <Route path="/login" element={<GuestOnly><LoginPage /></GuestOnly>} />
+          <Route path="/join" element={<AccountAccessPage />} />
+          <Route path="/reset-password" element={<AccountAccessPage reset />} />
           <Route path="/setup" element={<SetupPage />} />
           <Route path="/design" element={<DesignPage />} />
           <Route element={<RequireSession />}>
@@ -43,6 +49,7 @@ export function App() {
               <Route path="/inbox" element={<InboxPage />} />
               <Route path="/team" element={<TeamPage />} />
               <Route path="/you" element={<ProfilePage />} />
+              <Route path="/registration" element={<RegistrationAdminPage />} />
               <Route path="/invite" element={<InvitePage />} />
               <Route path="/squad" element={<SquadPage />} />
               <Route path="/onboarding" element={<OnboardingPage />} />

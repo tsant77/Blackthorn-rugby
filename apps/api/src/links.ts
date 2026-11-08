@@ -23,7 +23,7 @@ export function emailEnabled(env: Env): boolean {
 export function registerLinkRoutes(
   app: Hono<AppEnv>,
   currentSession: (c: AppContext) => Promise<Actor | null>,
-  startSession: (c: AppContext, userId: string, now: number) => Promise<void>,
+  startSession: (c: AppContext, userId: string, now: number) => Promise<unknown>,
 ): void {
   app.get("/api/auth/options", (c) => c.json({ emailEnabled: emailEnabled(c.env) }));
 
@@ -150,6 +150,10 @@ export function registerLinkRoutes(
        WHERE u.id = ? AND m.club_id = ? AND m.status = 'active' AND u.status != 'disabled'`,
     ).bind(requested, CLUB_ID).first<{ id: string; name: string }>();
     if (!member) return c.json({ error: "Member not found." }, 404);
+    if (requested !== session.user_id && session.role !== "admin") {
+      const credentials = await c.env.DB.prepare("SELECT username FROM credentials WHERE user_id=?").bind(requested).first<{ username: string | null }>();
+      if (credentials?.username) return c.json({ error: "Ask an administrator to reset this player's password." }, 403);
+    }
     const created = await insertLink(c, {
       kind: "signin",
       role: null,

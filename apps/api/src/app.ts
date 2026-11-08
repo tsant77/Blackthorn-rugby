@@ -1,3 +1,4 @@
+import { registerAccountRoutes } from "./accounts";
 import { Hono, type Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { SendEmail } from "@cloudflare/workers-types";
@@ -75,7 +76,8 @@ export function createApp(): Hono<AppEnv> {
     await next();
     const headers = c.res.headers;
     headers.set("x-content-type-options", "nosniff");
-    headers.set("referrer-policy", "strict-origin-when-cross-origin");
+    headers.set("referrer-policy", "no-referrer");
+    if (c.req.path.startsWith("/api/")) headers.set("cache-control", "no-store");
     headers.set("x-frame-options", "DENY");
     headers.set("permissions-policy", "camera=(), microphone=(), geolocation=()");
     headers.set(
@@ -271,6 +273,7 @@ export function createApp(): Hono<AppEnv> {
   registerAdminRoutes(app, currentSession);
   registerEngageRoutes(app, currentSession);
   registerLinkRoutes(app, currentSession, startSession);
+  registerAccountRoutes(app, currentSession, startSession);
 
   app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
   app.all("/auth/*", (c) => c.redirect("/login?error=invalid"));
@@ -433,12 +436,21 @@ function audit(
   );
 }
 
-async function startSession(c: AppContext, userId: string, now: number): Promise<void> {
+async function startSession(c: AppContext, userId: string, now: number, expectedHash?: string): Promise<boolean> {
   const token = randomToken();
   const hash = await sha256Hex(token);
-  await c.env.DB.prepare(
-    "INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
-  ).bind(crypto.randomUUID(), userId, hash, now + SESSION_MS, now).run();
+  const old = getCookie(c, SESSION_COOKIE);
+  const results = await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE sessions SET revoked_at=? WHERE token_hash=? AND user_id=? AND revoked_at IS NULL")
+      .bind(now, old ? await sha256Hex(old) : "", userId),
+    c.env.DB.prepare(`INSERT INTO sessions(id,user_id,token_hash,expires_at,created_at)
+      SELECT ?,?,?,?,? WHERE (? IS NULL OR EXISTS(
+        SELECT 1 FROM credentials cr JOIN users u ON u.id=cr.user_id
+        JOIN club_memberships m ON m.user_id=u.id AND m.club_id=?
+        WHERE cr.user_id=? AND cr.password_hash=? AND u.status='active' AND m.status='active'))`)
+      .bind(crypto.randomUUID(), userId, hash, now + SESSION_MS, now, expectedHash ?? null, CLUB_ID, userId, expectedHash ?? null),
+  ]);
+  if (results[1]!.meta.changes !== 1) return false;
   setCookie(c, SESSION_COOKIE, token, {
     httpOnly: true,
     secure: new URL(c.req.url).protocol === "https:",
@@ -446,6 +458,7 @@ async function startSession(c: AppContext, userId: string, now: number): Promise
     path: "/",
     maxAge: SESSION_MS / 1000,
   });
+  return true;
 }
 
 async function currentSession(c: AppContext): Promise<SessionRow | null> {
