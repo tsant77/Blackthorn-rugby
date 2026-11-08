@@ -46,7 +46,7 @@ export function HomePage() {
     void api<Dashboard>("/api/dashboard").then(setDash).catch((caught: unknown) => setError(caught instanceof ApiError ? caught.message : "Could not load your training data."));
     let active = true;
     setRecent({ status: "loading" });
-    void api<{ workouts: RecentWorkout[] }>("/api/workouts").then((body) => {
+    void api<{ workouts: RecentWorkout[] }>("/api/workouts?limit=3&status=counted&context=none").then((body) => {
       if (active) setRecent({
         status: "ready",
         workouts: body.workouts.filter((workout) => workout.status !== "voided" && workout.status !== "rejected").slice(0, 3),

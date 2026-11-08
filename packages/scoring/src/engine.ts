@@ -372,20 +372,23 @@ function findIdempotent(input: ScoreInput): PriorWorkout | undefined {
 }
 
 function weeklyLoadExceeds(input: ScoreInput): boolean {
-  const loads = new Map<string, number>();
-  for (const prior of counted(input)) {
-    addLoad(loads, prior.occurredOn, loadMinutes(prior.durationMin, loadWeight(input.rule, prior.intensity)));
-  }
   const workout = input.workout;
-  const ownWeight = loadWeight(input.rule, workout.intensity ?? "moderate");
-  addLoad(loads, workout.occurredOn, loadMinutes(workout.durationMin, ownWeight));
-
-  for (let offset = -6; offset <= 0; offset += 1) {
-    const start = addDays(workout.occurredOn, offset);
-    let sum = 0;
-    for (let day = 0; day < 7; day += 1) {
-      sum += loads.get(addDays(start, day)) ?? 0;
+  const center = Date.parse(workout.occurredOn + "T00:00:00Z");
+  const loads = Array<number>(13).fill(0);
+  for (const prior of input.history) {
+    if (!COUNTED.has(prior.status)) continue;
+    const offset = (Date.parse(prior.occurredOn + "T00:00:00Z") - center) / 86_400_000;
+    if (Number.isInteger(offset) && offset >= -6 && offset <= 6) {
+      loads[offset + 6]! += loadMinutes(prior.durationMin, loadWeight(input.rule, prior.intensity));
     }
+  }
+  loads[6]! += loadMinutes(workout.durationMin, loadWeight(input.rule, workout.intensity ?? "moderate"));
+  // Seven overlapping seven-day windows, preserving per-workout rounding.
+  // Advance the sum instead of formatting the same calendar dates 49 times.
+  let sum = loads.slice(0, 7).reduce((total, value) => total + value, 0);
+  if (sum > input.rule.weeklyLoadLimit) return true;
+  for (let end = 7; end < 13; end++) {
+    sum += loads[end]! - loads[end - 7]!;
     if (sum > input.rule.weeklyLoadLimit) return true;
   }
   return false;
@@ -407,10 +410,6 @@ function loadWeight(rule: ScoringRule, intensity: Intensity | null): number {
 
 function loadMinutes(durationMin: number, weightHundredths: number): number {
   return roundDiv(durationMin * weightHundredths, 100);
-}
-
-function addLoad(loads: Map<string, number>, date: string, amount: number): void {
-  loads.set(date, (loads.get(date) ?? 0) + amount);
 }
 
 function validateInterval(

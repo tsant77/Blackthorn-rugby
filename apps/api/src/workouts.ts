@@ -8,6 +8,7 @@ import {
   ClientPointsError,
   metersToMiles,
   milesToMeters,
+  isRealCivilDate,
   planReversal,
   scoreWorkout,
   type Intensity,
@@ -53,15 +54,23 @@ export function registerWorkoutRoutes(
     const session = await currentSession(c);
     if (!session) return c.json({ error: "Sign in required." }, 401);
     if (!session.profile_id) return c.json({ error: "Finish onboarding first." }, 409);
-    const context = await scoringContext(c.env.DB);
-    const workouts = await listOwn(c.env.DB, session.profile_id);
-    return c.json({ today: context.today, minDate: context.minDate, workouts, estimateRule: context.rule });
+    const limitText = c.req.query("limit") ?? "20";
+    if (!/^\d{1,2}$/.test(limitText) || Number(limitText) < 1 || Number(limitText) > 25) return c.json({ error: "Choose 1–25 workouts per page." }, 400);
+    const status = c.req.query("status");
+    if (status && status !== "counted") return c.json({ error: "Invalid workout filter." }, 400);
+    const cursor = parseHistoryCursor(c.req.query("cursor"));
+    if (cursor === false) return c.json({ error: "Invalid workout cursor." }, 400);
+    const page = await historyPage(c.env.DB, session.profile_id, Number(limitText), cursor, status === "counted");
+    // Recent cards need no current scoring configuration or calendar calculations.
+    if (c.req.query("context") === "none") return c.json(page);
+    const context = await scoringBasis(c.env.DB);
+    return c.json({ today: context.today, minDate: context.minDate, ...page, estimateRule: context.rule });
   });
 
   app.get("/api/scoring-estimate", async c => {
     const session = await currentSession(c);
     if (!session?.profile_id) return c.json({ error: "Sign in required." }, 401);
-    const context = await scoringContext(c.env.DB);
+    const context = await scoringBasis(c.env.DB);
     const date = c.req.query("date") ?? context.today;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: "Invalid date." }, 400);
     const id = c.req.query("workoutId");
@@ -82,25 +91,21 @@ export function registerWorkoutRoutes(
       if (error instanceof ClientPointsError) return c.json({ error: error.message }, 400);
       throw error;
     }
-    const context = await scoringContext(c.env.DB);
+    const context = await scoringBasis(c.env.DB);
     const draft = draftFromBody(body, context.today);
     if (!draft) return c.json({ error: "Check the duration, type, and date." }, 400);
     if (draft.workout.occurredOn !== context.today) {
       const selected = await ruleForDate(c.env.DB, draft.workout.occurredOn);
       context.rule = selected.rule; context.ruleId = selected.id;
     }
-    const existing = draft.clientRequestId
-      ? await c.env.DB.prepare(
-        "SELECT id FROM workouts WHERE player_profile_id = ? AND client_request_id = ? ",
-      ).bind(session.profile_id, draft.clientRequestId).first<{ id: string }>()
-      : null;
-    if (existing) return c.json(await workoutPayload(c.env.DB, existing.id, session.profile_id!, { idempotent: true }));
+    const reads = await submissionReads(c.env.DB, session.profile_id!, draft.workout.occurredOn, draft.clientRequestId);
+    if (reads.existing) return c.json(await workoutPayload(c.env.DB, reads.existing.id, session.profile_id!, { idempotent: true }));
 
     const decision = scoreWorkout({
       workout: draft.workout,
       athlete: athleteOf(session),
       rule: context.rule,
-      history: await loadHistory(c.env.DB, session.profile_id!, draft.workout.occurredOn, null),
+      history: reads.history,
       now: new Date(),
       timeZone: context.timeZone,
       offseasonStart: context.offseasonStart,
@@ -136,8 +141,14 @@ export function registerWorkoutRoutes(
       dailyCapStatement(c.env.DB, session.profile_id!, id, context.ruleId, draft.workout.occurredOn, context.rule.dailyCapTenths, session.user_id, now),
       ...await consistencyStatements(c.env.DB, session.profile_id!, [draft.workout.occurredOn], session.user_id, now),
       audit(c.env.DB, session.user_id, "workout_logged", id, null, { awardedPointsTenths: decision.awardedPointsTenths }, now),
+      // Read the authoritative response before leaving this scoring transaction.
+      workoutStatement(c.env.DB, id, session.profile_id!),
     ];
-    try { await c.env.DB.batch(statements); } catch (error) {
+    let saved: WorkoutRow | undefined;
+    try {
+      const results = await c.env.DB.batch<WorkoutRow>(statements);
+      saved = results.at(-1)!.results[0];
+    } catch (error) {
       if (mutationConflict(error)) return c.json({ error: "Workout changed. Reload and try again." }, 409);
       if (draft.clientRequestId) {
         const existing = await c.env.DB.prepare("SELECT id FROM workouts WHERE player_profile_id=? AND client_request_id=?").bind(session.profile_id,draft.clientRequestId).first<{ id: string }>();
@@ -146,7 +157,7 @@ export function registerWorkoutRoutes(
       throw error;
     }
     await syncBadges(c.env, session.profile_id!, now);
-    const payload = await workoutPayload(c.env.DB, id, session.profile_id!);
+    const payload = { workout: saved ? presentWorkout(saved) : null, idempotent: false };
     const actual = payload.workout?.points_tenths ?? 0;
     return c.json({
       ...payload,
@@ -169,7 +180,7 @@ export function registerWorkoutRoutes(
       if (error instanceof ClientPointsError) return c.json({ error: error.message }, 400);
       throw error;
     }
-    const context = await scoringContext(c.env.DB);
+    const context = await scoringBasis(c.env.DB);
     const draft = draftFromBody(body, context.today);
     if (!draft) return c.json({ error: "Check the duration, type, and date." }, 400);
     const selected = await ruleForDate(c.env.DB, draft.workout.occurredOn, owned.rule_version_id ?? undefined);
@@ -187,7 +198,7 @@ export function registerWorkoutRoutes(
     });
     if (decision.outcome !== "award") return c.json({ error: decision.message, code: decision.rejectCode }, 400);
     const now = Date.now();
-    const net = await netPoints(c.env.DB, owned.id);
+    const net = Number(owned.net_points);
     const statements = [
       revisionGuard(c.env.DB, owned.id, owned.scoring_revision, "submitted"),
       c.env.DB.prepare(
@@ -209,13 +220,18 @@ export function registerWorkoutRoutes(
       dailyCapStatement(c.env.DB, session.profile_id!, owned.id, context.ruleId, draft.workout.occurredOn, context.rule.dailyCapTenths, session.user_id, now),
       ...await consistencyStatements(c.env.DB, session.profile_id!, [owned.occurred_on, draft.workout.occurredOn], session.user_id, now),
       audit(c.env.DB, session.user_id, "workout_edited", owned.id, { netPointsTenths: net }, { awardedPointsTenths: decision.awardedPointsTenths }, now),
+      workoutStatement(c.env.DB, owned.id, session.profile_id!),
     ];
-    try { await c.env.DB.batch(statements); } catch (error) {
+    let saved: WorkoutRow | undefined;
+    try {
+      const results = await c.env.DB.batch<WorkoutRow>(statements);
+      saved = results.at(-1)!.results[0];
+    } catch (error) {
       if (mutationConflict(error)) return c.json({ error: "Workout changed. Reload and try again." }, 409);
       throw error;
     }
     await syncBadges(c.env, session.profile_id!, now);
-    const payload = await workoutPayload(c.env.DB, owned.id, session.profile_id!);
+    const payload = { workout: saved ? presentWorkout(saved) : null, idempotent: false };
     const actual = payload.workout?.points_tenths ?? 0;
     return c.json({
       ...payload,
@@ -229,18 +245,18 @@ export function registerWorkoutRoutes(
     if (session instanceof Response) return session;
     const owned = await ownWorkout(c.env.DB, c.req.param("id"), session.profile_id!);
     if (!owned) return c.json({ error: "Workout not found." }, 404);
-    const context = await scoringContext(c.env.DB);
-    context.ruleId = owned.rule_version_id ?? context.ruleId;
+    // Deletion reverses the stored award; it does not need today's scoring rules.
+    const ruleId = owned.rule_version_id ?? (await scoringBasis(c.env.DB)).ruleId;
     const now = Date.now();
-    const net = await netPoints(c.env.DB, owned.id);
+    const net = Number(owned.net_points);
     try { await c.env.DB.batch([
       revisionGuard(c.env.DB, owned.id, owned.scoring_revision, "submitted"),
       c.env.DB.prepare("UPDATE workouts SET status = 'voided', review_note = 'Deleted by the player', updated_at = ? WHERE id = ?").bind(now, owned.id),
-      ...reversalInsert(c.env.DB, session, owned.id, context.ruleId, net, now),
+      ...reversalInsert(c.env.DB, session, owned.id, ruleId, net, now),
       ...await consistencyStatements(c.env.DB, session.profile_id!, [owned.occurred_on], session.user_id, now),
       audit(c.env.DB, session.user_id, "workout_deleted", owned.id, { netPointsTenths: net }, { status: "voided" }, now),
     ]); } catch (error) { if (mutationConflict(error)) return c.json({ error: "Workout changed. Reload and try again." }, 409); throw error; }
-    await syncBadges(c.env, session.profile_id!, now);
+    // Earned badges are permanent. Removing training cannot earn a new badge.
     return c.json({ ok: true });
   });
 
@@ -299,7 +315,7 @@ function athleteOf(session: PlayerSession): { injuryStatus: "available" | "limit
   return { injuryStatus, trainingLocked: session.training_locked === 1 };
 }
 
-export async function scoringContext(db: D1Database) {
+async function scoringBasis(db: D1Database) {
   const [clubs, periods] = await db.batch([
     db.prepare("SELECT timezone FROM clubs WHERE id = ?").bind(CLUB_ID),
     db.prepare(
@@ -313,20 +329,22 @@ export async function scoringContext(db: D1Database) {
 
   const selected = await ruleForDate(db, today);
   const rule = selected.rule;
+  return {
+    timeZone, today, minDate: addDays(today, -rule.backdateDays), rule, ruleId: selected.id,
+    offseasonStart: period?.start_on ?? null, offseasonEnd: period?.end_on ?? null,
+  };
+}
+
+export async function scoringContext(db: D1Database) {
+  const basis = await scoringBasis(db);
+  const { today } = basis;
   const weekday = utcWeekday(today);
   const week = { start: addDays(today, -weekday), end: addDays(today, 6 - weekday) };
   const [year, month] = today.split("-").map(Number);
   const monthText = String(month).padStart(2, "0");
   const lastDay = new Date(Date.UTC(year ?? 2026, month ?? 1, 0)).getUTCDate();
   return {
-    timeZone,
-    today,
-    minDate: addDays(today, -rule.backdateDays),
-    rule,
-    ruleId: selected.id,
-    offseasonStart: period?.start_on ?? null,
-    offseasonEnd: period?.end_on ?? null,
-    week,
+    ...basis, week,
     lastWeek: { start: addDays(week.start, -7), end: addDays(week.start, -1) },
     month: { start: `${year}-${monthText}-01`, end: `${year}-${monthText}-${String(lastDay).padStart(2, "0")}` },
   };
@@ -418,8 +436,21 @@ function utcWeekday(iso: string): number {
   return (date.getUTCDay() + 6) % 7;
 }
 
-async function loadHistory(db: D1Database, profileId: string, occurredOn: string, excludeId: string | null): Promise<PriorWorkout[]> {
-  const rows = await db.prepare(
+interface HistoryRow {
+  id: string;
+  type: string;
+  occurred_on: string;
+  started_at: number | null;
+  ended_at: number | null;
+  duration_min: number;
+  intensity: Intensity | null;
+  status: "submitted" | "approved";
+  client_request_id: string | null;
+  awarded: number;
+}
+
+function historyStatement(db: D1Database, profileId: string, occurredOn: string, excludeId: string | null) {
+  return db.prepare(
     `SELECT w.id, w.type, w.occurred_on, w.started_at, w.ended_at, w.duration_min, w.intensity, w.status,
             w.client_request_id, COALESCE(SUM(t.points_tenths), 0) AS awarded
      FROM workouts w
@@ -428,19 +459,11 @@ async function loadHistory(db: D1Database, profileId: string, occurredOn: string
        AND w.occurred_on >= ? AND w.occurred_on <= ?
        AND (? IS NULL OR w.id != ?)
      GROUP BY w.id, w.type, w.occurred_on, w.started_at, w.ended_at, w.duration_min, w.intensity, w.status, w.client_request_id`,
-  ).bind(profileId, addDays(occurredOn, -6), addDays(occurredOn, 6), excludeId, excludeId).all<{
-    id: string;
-    type: string;
-    occurred_on: string;
-    started_at: number | null;
-    ended_at: number | null;
-    duration_min: number;
-    intensity: Intensity | null;
-    status: "submitted" | "approved";
-    client_request_id: string | null;
-    awarded: number;
-  }>();
-  return rows.results.map((row) => ({
+  ).bind(profileId, addDays(occurredOn, -6), addDays(occurredOn, 6), excludeId, excludeId);
+}
+
+function presentHistory(rows: HistoryRow[]): PriorWorkout[] {
+  return rows.map((row) => ({
     id: row.id,
     type: row.type,
     occurredOn: row.occurred_on,
@@ -452,6 +475,21 @@ async function loadHistory(db: D1Database, profileId: string, occurredOn: string
     clientRequestId: row.client_request_id,
     awardedPointsTenths: Number(row.awarded),
   }));
+}
+
+async function loadHistory(db: D1Database, profileId: string, occurredOn: string, excludeId: string | null): Promise<PriorWorkout[]> {
+  const rows = await historyStatement(db, profileId, occurredOn, excludeId).all<HistoryRow>();
+  return presentHistory(rows.results);
+}
+
+async function submissionReads(db: D1Database, profileId: string, date: string, requestId: string | null) {
+  if (!requestId) return { existing: null, history: await loadHistory(db, profileId, date, null) };
+  const [matches, history] = await db.batch([
+    db.prepare("SELECT id FROM workouts WHERE player_profile_id=? AND client_request_id=?").bind(profileId, requestId),
+    historyStatement(db, profileId, date, null),
+  ]);
+  const existing = matches!.results[0] as { id: string } | undefined;
+  return { existing, history: existing ? [] : presentHistory(history!.results as HistoryRow[]) };
 }
 
 function draftFromBody(body: Record<string, unknown>, today: string): {
@@ -547,35 +585,64 @@ function audit(db: D1Database, userId: string, action: string, entityId: string,
   );
 }
 
-async function netPoints(db: D1Database, workoutId: string): Promise<number> {
-  const row = await db.prepare("SELECT COALESCE(SUM(points_tenths), 0) AS net FROM point_transactions WHERE workout_id = ?").bind(workoutId).first<{ net: number }>();
-  return Number(row?.net ?? 0);
-}
 
-async function ownWorkout(db: D1Database, id: string, profileId: string): Promise<{ id: string; rule_version_id: string | null; occurred_on: string; scoring_revision: number } | null> {
+async function ownWorkout(db: D1Database, id: string, profileId: string): Promise<{ id: string; rule_version_id: string | null; occurred_on: string; scoring_revision: number; net_points: number } | null> {
   return db.prepare(
-    "SELECT id,rule_version_id,occurred_on,scoring_revision FROM workouts WHERE id = ? AND player_profile_id = ? AND status = 'submitted'",
-  ).bind(id, profileId).first<{ id: string; rule_version_id: string | null; occurred_on: string; scoring_revision: number }>();
+    "SELECT id,rule_version_id,occurred_on,scoring_revision, (SELECT COALESCE(SUM(points_tenths),0) FROM point_transactions WHERE workout_id=workouts.id) AS net_points FROM workouts WHERE id = ? AND player_profile_id = ? AND status = 'submitted'",
+  ).bind(id, profileId).first<{ id: string; rule_version_id: string | null; occurred_on: string; scoring_revision: number; net_points: number }>();
 }
 
-async function listOwn(db: D1Database, profileId: string, workoutId?: string): Promise<WorkoutRow[]> {
+type HistoryCursor = [date: string, createdAt: number, id: string];
+function parseHistoryCursor(raw: string | undefined): HistoryCursor | null | false {
+  if (raw === undefined) return null;
+  if (raw.length > 256) return false;
+  try {
+    const value = JSON.parse(raw);
+    if (!Array.isArray(value) || value.length !== 3 || typeof value[0] !== "string" || !isRealCivilDate(value[0]) ||
+        !Number.isSafeInteger(value[1]) || value[1] < 0 || typeof value[2] !== "string" || !value[2] || value[2].length > 100) return false;
+    return value as HistoryCursor;
+  } catch { return false; }
+}
+
+async function historyPage(db: D1Database, profileId: string, limit: number, cursor: HistoryCursor | null, counted: boolean) {
+  const where = ["player_profile_id = ?"];
+  const bindings: (string | number)[] = [profileId];
+  if (counted) where.push("status IN ('submitted','approved')");
+  if (cursor) {
+    where.push("(occurred_on,created_at,id) < (?,?,?)");
+    bindings.push(...cursor);
+  }
   const rows = await db.prepare(
-    `SELECT w.id, w.type, COALESCE(json_extract(r.config_json, '$.types.' || w.type || '.label'), replace(w.type,'_',' ')) AS activity_label, w.occurred_on, w.duration_min, w.intensity, w.distance_m, w.notes, w.status, w.review_note, w.created_at,
-            COALESCE(SUM(t.points_tenths), 0) AS points_tenths
-     FROM workouts w
-     LEFT JOIN scoring_rule_versions r ON r.id=w.rule_version_id
-     LEFT JOIN point_transactions t ON t.workout_id = w.id
-     WHERE w.player_profile_id = ? ${workoutId ? "AND w.id = ?" : ""}
-     GROUP BY w.id, w.type, w.occurred_on, w.duration_min, w.intensity, w.distance_m, w.notes, w.status, w.review_note, w.created_at
-     ORDER BY w.occurred_on DESC, w.created_at DESC`,
-  ).bind(profileId, ...(workoutId ? [workoutId] : [])).all<WorkoutRow>();
-  return rows.results.map(presentWorkout);
+    `WITH page AS (
+       SELECT id,type,occurred_on,duration_min,intensity,distance_m,notes,status,review_note,created_at,rule_version_id
+       FROM workouts WHERE ${where.join(" AND ")}
+       ORDER BY occurred_on DESC,created_at DESC,id DESC LIMIT ?
+     )
+     SELECT w.id,w.type,COALESCE(json_extract(r.config_json,'$.types.' || w.type || '.label'),replace(w.type,'_',' ')) AS activity_label,
+       w.occurred_on,w.duration_min,w.intensity,w.distance_m,w.notes,w.status,w.review_note,w.created_at,
+       (SELECT COALESCE(SUM(t.points_tenths),0) FROM point_transactions t WHERE t.workout_id=w.id) AS points_tenths
+     FROM page w LEFT JOIN scoring_rule_versions r ON r.id=w.rule_version_id
+     ORDER BY w.occurred_on DESC,w.created_at DESC,w.id DESC`,
+  ).bind(...bindings, limit + 1).all<WorkoutRow>();
+  const workouts = rows.results.slice(0, limit).map(presentWorkout);
+  const last = workouts.at(-1);
+  return { workouts, nextCursor: rows.results.length > limit && last
+    ? JSON.stringify([last.occurred_on, last.created_at, last.id]) : null };
+}
+
+function workoutStatement(db: D1Database, id: string, profileId: string) {
+  return db.prepare(
+    `SELECT w.id,w.type,COALESCE(json_extract(r.config_json,'$.types.' || w.type || '.label'),replace(w.type,'_',' ')) AS activity_label,
+       w.occurred_on,w.duration_min,w.intensity,w.distance_m,w.notes,w.status,w.review_note,w.created_at,
+       (SELECT COALESCE(SUM(t.points_tenths),0) FROM point_transactions t WHERE t.workout_id=w.id) AS points_tenths
+     FROM workouts w LEFT JOIN scoring_rule_versions r ON r.id=w.rule_version_id
+     WHERE w.player_profile_id=? AND w.id=?`,
+  ).bind(profileId, id);
 }
 
 async function workoutPayload(db: D1Database, id: string, profileId: string, extra?: { idempotent: boolean }) {
-  const rows = await listOwn(db, profileId, id);
-  const workout = rows[0] ?? null;
-  return { workout, idempotent: extra?.idempotent ?? false };
+  const row = await workoutStatement(db, id, profileId).first<WorkoutRow>();
+  return { workout: row ? presentWorkout(row) : null, idempotent: extra?.idempotent ?? false };
 }
 
 function presentWorkout(row: WorkoutRow): WorkoutRow & { distance_miles: number | null } {

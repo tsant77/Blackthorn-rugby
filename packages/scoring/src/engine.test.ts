@@ -1,3 +1,4 @@
+import { addDays } from "./dates";
 import { describe, expect, it } from "vitest";
 import { legacyRule as defaultRule } from "./defaults";
 import { formatPoints, planReversal, scoreWorkout } from "./engine";
@@ -358,5 +359,32 @@ describe("published defaults", () => {
     expect(rule.weeklyLoadLimit).toBe(600);
     expect(rule.backdateDays).toBe(7);
     expect(rule.allowedWhenLimited).toEqual([]);
+  });
+});
+
+
+describe("rolling training-load equivalence", () => {
+  it("matches exhaustive seven-day windows with individual rounding and excluded statuses", () => {
+    let seed = 7183;
+    const random = (max: number) => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed % max; };
+    const intensities = ["easy", "moderate", "hard", "max"] as const;
+    const statuses = ["submitted", "approved", "voided", "rejected"] as const;
+    for (let sample = 0; sample < 100; sample++) {
+      const rule = defaultRule();
+      const history = Array.from({ length: 40 }, (_, i) => prior({ id: String(i), occurredOn: addDays("2026-11-08", random(19) - 9),
+        durationMin: random(31) + 1, intensity: intensities[random(4)]!, status: statuses[random(4)]! }));
+      const draft = workout({ durationMin: random(31) + 1, intensity: intensities[random(4)]! });
+      const counted = history.filter(w => w.status === "submitted" || w.status === "approved");
+      const loads = [...counted, draft].map(w => ({ date: w.occurredOn, load: Math.floor((w.durationMin * rule.intensityLoadHundredths[w.intensity ?? "moderate"] + 50) / 100) }));
+      const maximum = Math.max(...Array.from({ length: 7 }, (_, i) => {
+        const start = addDays(draft.occurredOn, i - 6), end = addDays(start, 6);
+        return loads.filter(w => w.date >= start && w.date <= end).reduce((total, w) => total + w.load, 0);
+      }));
+      for (const delta of [-1, 0, 1]) {
+        rule.weeklyLoadLimit = Math.max(1, maximum + delta);
+        const result = score({ history, rule }, draft);
+        expect(result.rejectCode === "overtraining_guard").toBe(maximum > rule.weeklyLoadLimit);
+      }
+    }
   });
 });

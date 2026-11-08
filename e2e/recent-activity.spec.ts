@@ -12,7 +12,11 @@ test("recent activity waits for data and excludes voided and rejected sessions b
 
   let release!: () => void;
   const waiting = new Promise<void>((resolve) => { release = resolve; });
-  await page.route("**/api/workouts", async (route) => {
+  await page.route("**/api/workouts?*", async (route) => {
+    const query = new URL(route.request().url()).searchParams;
+    expect(query.get("limit")).toBe("3");
+    expect(query.get("status")).toBe("counted");
+    expect(query.get("context")).toBe("none");
     await waiting;
     await route.fulfill({ json: { workouts: [
       { id: "deleted", type: "football", status: "voided" },
@@ -36,14 +40,14 @@ test("recent activity waits for data and excludes voided and rejected sessions b
   await expect(activity).not.toContainText("basketball");
   await expect(activity).not.toContainText("circuit");
 
-  await page.unroute("**/api/workouts");
-  await page.route("**/api/workouts", (route) => route.fulfill({ status: 500, json: { error: "Unavailable" } }));
+  await page.unroute("**/api/workouts?*");
+  await page.route("**/api/workouts?*", (route) => route.fulfill({ status: 500, json: { error: "Unavailable" } }));
   await page.reload();
   await expect(activity.getByRole("alert")).toHaveText("Could not load recent activity.");
   await expect(activity).not.toContainText("Your first session starts the story");
 
-  await page.unroute("**/api/workouts");
-  await page.route("**/api/workouts", (route) => route.fulfill({ json: { workouts: [
+  await page.unroute("**/api/workouts?*");
+  await page.route("**/api/workouts?*", (route) => route.fulfill({ json: { workouts: [
     { id: "deleted", status: "voided" }, { id: "rejected", status: "rejected" },
   ] } }));
   await page.reload();
