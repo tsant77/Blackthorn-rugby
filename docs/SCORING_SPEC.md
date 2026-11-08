@@ -154,5 +154,5 @@ formatPoints(tenths: number): string
 
 - Approval queues changing whether `submitted` points sit on the board.
 - Achievement math and challenge bonuses.
-- Admin adjustments (`kind = adjustment`), which Phase 5 writes directly to the ledger with an audit event.
+- Admin adjustments are implemented. They are new `kind = adjustment` rows with a reason and an `occurred_on` date. They do not update older rows. A future scoring version does not recompute history.
 - Recompute jobs across a roster.

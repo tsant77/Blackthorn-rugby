@@ -29,6 +29,9 @@ export function Shell() {
             <SideLink key={item.to} to={item.to} end={item.end}>{item.label}</SideLink>
           ))}
           <SideLink to="/team">Team</SideLink>
+          {staff ? <SideLink to="/moderate">Moderate</SideLink> : null}
+          {staff ? <SideLink to="/members">Members</SideLink> : null}
+          {me?.membership.role === "admin" ? <SideLink to="/rules">Rules</SideLink> : null}
           {staff ? <SideLink to="/squad">Squad</SideLink> : null}
           {me?.membership.role === "admin" ? <SideLink to="/invite">Invite</SideLink> : null}
         </nav>
@@ -38,6 +41,15 @@ export function Shell() {
           <div className="px-s2 py-s2">
             <Brand />
           </div>
+          {staff ? (
+            <nav aria-label="Club" className="flex flex-wrap gap-s1 px-s2 pb-s2">
+              <SideLink to="/moderate">Moderate</SideLink>
+              <SideLink to="/members">Members</SideLink>
+              {me?.membership.role === "admin" ? <SideLink to="/rules">Rules</SideLink> : null}
+              <SideLink to="/squad">Squad</SideLink>
+              {me?.membership.role === "admin" ? <SideLink to="/invite">Invite</SideLink> : null}
+            </nav>
+          ) : null}
           <div className="h-1 bg-gold" />
         </header>
         <Outlet />

@@ -139,7 +139,11 @@ async function periodTotal(db: D1Database, profileId: string, start: string | nu
      WHERE w.player_profile_id = ? AND w.status IN ('submitted', 'approved')
        AND w.occurred_on >= ? AND w.occurred_on <= ?`,
   ).bind(profileId, start, end).first<{ points_tenths: number; sessions: number }>();
-  return { pointsTenths: Number(row?.points_tenths ?? 0), sessions: Number(row?.sessions ?? 0) };
+  const adjustment = await db.prepare(
+    `SELECT COALESCE(SUM(points_tenths), 0) AS points_tenths FROM point_transactions
+     WHERE player_profile_id = ? AND workout_id IS NULL AND occurred_on >= ? AND occurred_on <= ?`,
+  ).bind(profileId, start, end).first<{ points_tenths: number }>();
+  return { pointsTenths: Number(row?.points_tenths ?? 0) + Number(adjustment?.points_tenths ?? 0), sessions: Number(row?.sessions ?? 0) };
 }
 
 function streakFrom(dates: string[], today: string): number {

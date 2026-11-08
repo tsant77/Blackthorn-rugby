@@ -37,6 +37,7 @@ interface WorkoutRow {
   distance_m: number | null;
   notes: string | null;
   status: string;
+  review_note: string | null;
   points_tenths: number;
   created_at: number;
 }
@@ -188,7 +189,7 @@ export function registerWorkoutRoutes(
     const now = Date.now();
     const net = await netPoints(c.env.DB, owned.id);
     await c.env.DB.batch([
-      c.env.DB.prepare("UPDATE workouts SET status = 'voided', updated_at = ? WHERE id = ?").bind(now, owned.id),
+      c.env.DB.prepare("UPDATE workouts SET status = 'voided', review_note = 'Deleted by the player', updated_at = ? WHERE id = ?").bind(now, owned.id),
       ...reversalInsert(c.env.DB, session, owned.id, context.ruleId, net, now),
       audit(c.env.DB, session.user_id, "workout_deleted", owned.id, { netPointsTenths: net }, { status: "voided" }, now),
     ]);
@@ -254,6 +255,7 @@ export async function scoringContext(db: D1Database) {
   const club = await db.prepare("SELECT timezone FROM clubs WHERE id = ?").bind(CLUB_ID).first<{ timezone: string }>();
   const timeZone = club?.timezone ?? "America/New_York";
   const today = civilDateInTimeZone(new Date(), timeZone);
+  await promoteDueRules(db, today);
   const ruleRow = await db.prepare(
     "SELECT id, version, status, config_json, backdate_days FROM scoring_rule_versions WHERE club_id = ? AND status = 'active'",
   ).bind(CLUB_ID).first<{ id: string; version: number; status: string; config_json: string; backdate_days: number }>();
@@ -291,6 +293,28 @@ interface BoardFilter {
 function boardFilter(groupId: string | null, positionId: string | null): BoardFilter {
   if (groupId === "coaches") return { coaches: true, groupId: null, positionId: null };
   return { coaches: false, groupId, positionId };
+}
+
+async function promoteDueRules(db: D1Database, today: string): Promise<void> {
+  const due = await db.prepare(
+    `SELECT id, effective_on FROM scoring_rule_versions
+     WHERE club_id = ? AND status = 'draft' AND effective_on IS NOT NULL AND effective_on <= ?
+     ORDER BY effective_on DESC, version DESC LIMIT 1`,
+  ).bind(CLUB_ID, today).first<{ id: string; effective_on: string }>();
+  if (!due) return;
+  const current = await db.prepare(
+    "SELECT id FROM scoring_rule_versions WHERE club_id = ? AND status = 'active'",
+  ).bind(CLUB_ID).first<{ id: string }>();
+  if (current?.id === due.id) return;
+  const now = Date.now();
+  await db.batch([
+    db.prepare(
+      "UPDATE scoring_rule_versions SET status = 'retired', retired_at = ? WHERE club_id = ? AND status = 'active'",
+    ).bind(now, CLUB_ID),
+    db.prepare(
+      "UPDATE scoring_rule_versions SET status = 'active', activated_at = ? WHERE id = ?",
+    ).bind(now, due.id),
+  ]);
 }
 
 async function standingsFor(db: D1Database, start: string | null, end: string | null, filter: BoardFilter) {
@@ -341,13 +365,24 @@ async function standingsFor(db: D1Database, start: string | null, end: string | 
     points_tenths: number;
     workout_count: number;
   }>();
+  const adjustments = await db.prepare(
+    `SELECT player_profile_id, COALESCE(SUM(points_tenths), 0) AS points_tenths
+     FROM point_transactions
+     WHERE club_id = ? AND workout_id IS NULL AND occurred_on >= ? AND occurred_on <= ?
+     GROUP BY player_profile_id`,
+  ).bind(CLUB_ID, start, end).all<{ player_profile_id: string; points_tenths: number }>();
+  const extra = new Map(adjustments.results.map((row) => [row.player_profile_id, Number(row.points_tenths)]));
+  const merged = rows.results.map((row) => ({
+    ...row,
+    points_tenths: Number(row.points_tenths) + (extra.get(row.profile_id) ?? 0),
+    workout_count: Number(row.workout_count),
+  })).sort((a, b) => b.points_tenths - a.points_tenths || a.roster_name.localeCompare(b.roster_name));
   let rank = 0;
   let previous: number | null = null;
-  return rows.results.map((row, index) => {
-    const points = Number(row.points_tenths);
-    if (previous !== points) rank = index + 1;
-    previous = points;
-    return { ...row, rank, points_tenths: points, workout_count: Number(row.workout_count) };
+  return merged.map((row, index) => {
+    if (previous !== row.points_tenths) rank = index + 1;
+    previous = row.points_tenths;
+    return { ...row, rank };
   });
 }
 
@@ -493,18 +528,18 @@ async function netPoints(db: D1Database, workoutId: string): Promise<number> {
 
 async function ownWorkout(db: D1Database, id: string, profileId: string): Promise<{ id: string } | null> {
   return db.prepare(
-    "SELECT id FROM workouts WHERE id = ? AND player_profile_id = ? AND status != 'voided'",
+    "SELECT id FROM workouts WHERE id = ? AND player_profile_id = ? AND status = 'submitted'",
   ).bind(id, profileId).first<{ id: string }>();
 }
 
 async function listOwn(db: D1Database, profileId: string): Promise<WorkoutRow[]> {
   const rows = await db.prepare(
-    `SELECT w.id, w.type, w.occurred_on, w.duration_min, w.intensity, w.distance_m, w.notes, w.status, w.created_at,
+    `SELECT w.id, w.type, w.occurred_on, w.duration_min, w.intensity, w.distance_m, w.notes, w.status, w.review_note, w.created_at,
             COALESCE(SUM(t.points_tenths), 0) AS points_tenths
      FROM workouts w
      LEFT JOIN point_transactions t ON t.workout_id = w.id
-     WHERE w.player_profile_id = ? AND w.status != 'voided'
-     GROUP BY w.id, w.type, w.occurred_on, w.duration_min, w.intensity, w.distance_m, w.notes, w.status, w.created_at
+     WHERE w.player_profile_id = ?
+     GROUP BY w.id, w.type, w.occurred_on, w.duration_min, w.intensity, w.distance_m, w.notes, w.status, w.review_note, w.created_at
      ORDER BY w.occurred_on DESC, w.created_at DESC`,
   ).bind(profileId).all<WorkoutRow>();
   return rows.results.map(presentWorkout);

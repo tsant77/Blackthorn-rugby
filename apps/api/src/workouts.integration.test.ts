@@ -91,8 +91,10 @@ describe("workout scoring and leaderboards", () => {
       headers: { cookie: player },
     }, env);
     expect(removed.status).toBe(200);
-    const history = await json<{ workouts: { id: string }[] }>("/api/workouts", player);
-    expect(history.workouts.some((workout) => workout.id === createdBody.workout.id)).toBe(false);
+    const history = await json<{ workouts: { id: string; status: string; review_note: string | null }[] }>("/api/workouts", player);
+    const removedRow = history.workouts.find((workout) => workout.id === createdBody.workout.id);
+    expect(removedRow?.status).toBe("voided");
+    expect(removedRow?.review_note).toBe("Deleted by the player");
     const after = await env.DB.prepare("SELECT COALESCE(SUM(points_tenths), 0) AS net FROM point_transactions WHERE workout_id = ?").bind(createdBody.workout.id).first<{ net: number }>();
     expect(Number(after?.net)).toBe(0);
     const updates = await env.DB.prepare("SELECT COUNT(*) AS n FROM point_transactions WHERE workout_id = ? AND kind = 'award'").bind(createdBody.workout.id).first<{ n: number }>();

@@ -1,0 +1,76 @@
+import { expect, test, type Page } from "@playwright/test";
+import { mkdir } from "node:fs/promises";
+
+const shots = "docs/screenshots/phase-5";
+
+test("coach voids a workout and the board drops", async ({ page }) => {
+  await mkdir(shots, { recursive: true });
+  await signIn(page, "coach@blackthorn.test");
+  await page.getByRole("link", { name: "Invite a player" }).click();
+  await page.getByLabel("Email").fill("scored@blackthorn.test");
+  await page.getByRole("button", { name: "Send invite" }).click();
+  await page.goto(await latestLink(page, "scored@blackthorn.test"));
+  await page.getByLabel("Roster name").fill("Test Player");
+  await page.getByLabel("Position").selectOption({ label: "Fullback" });
+  await page.getByRole("button", { name: "Save profile" }).click();
+  await page.getByRole("link", { name: "Log" }).click();
+  await page.getByLabel("Minutes").fill("40");
+  await page.getByRole("button", { name: "Save workout" }).click();
+  await expect(page.getByRole("status")).toContainText("6.0 points");
+
+  await signOut(page);
+  await signIn(page, "coach@blackthorn.test");
+  await page.getByRole("link", { name: "Moderate", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Moderation" })).toBeVisible();
+  await page.screenshot({ path: `${shots}/moderate-desktop.png` });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: `${shots}/moderate-mobile.png`, fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.getByRole("link", { name: "Members", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Members" })).toBeVisible();
+  await page.screenshot({ path: `${shots}/members-desktop.png`, fullPage: true });
+  await page.getByRole("link", { name: "Rules", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Scoring" })).toBeVisible();
+  await page.screenshot({ path: `${shots}/rules-desktop.png`, fullPage: true });
+  await page.getByRole("link", { name: "Moderate", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Moderation" })).toBeVisible();
+  await page.getByLabel("Reason").fill("Logged twice");
+  await page.getByRole("button", { name: "Void" }).click();
+  await expect(page.getByText("voided")).toBeVisible();
+
+  await signOut(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByLabel("Email").fill("scored@blackthorn.test");
+  await page.getByRole("button", { name: "Email me a link" }).click();
+  await page.goto(await latestLink(page, "scored@blackthorn.test"));
+  await page.getByRole("link", { name: "Log" }).click();
+  await expect(page.getByText("voided")).toBeVisible();
+  await expect(page.getByText("Logged twice")).toBeVisible();
+  await page.getByText("Logged twice").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: `${shots}/player-status-mobile.png`, fullPage: true });
+  await page.getByRole("link", { name: "Board" }).click();
+  await expect(page.getByText("0.0").first()).toBeVisible();
+  await expect(page.getByText("6.0")).toHaveCount(0);
+});
+
+async function signOut(page: Page) {
+  await page.request.post("/api/auth/logout");
+  await page.goto("/login");
+  await expect(page.getByLabel("Email")).toBeVisible();
+}
+
+async function signIn(page: Page, email: string) {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(email);
+  await page.getByRole("button", { name: "Email me a link" }).click();
+  await page.goto(await latestLink(page, email));
+}
+
+async function latestLink(page: Page, email: string): Promise<string> {
+  const response = await page.request.get(`/api/dev/mailbox?to=${encodeURIComponent(email)}`);
+  const body = await response.json() as { messages: { text_body: string }[] };
+  const match = body.messages[0]?.text_body.match(/https?:\/\/\S+/);
+  if (!match?.[0]) throw new Error(`No link for ${email}`);
+  return match[0];
+}

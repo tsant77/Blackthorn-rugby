@@ -22,6 +22,8 @@ interface Workout {
   intensity: string | null;
   distance_miles: number | null;
   notes: string | null;
+  status: string;
+  review_note: string | null;
   points_tenths: number;
 }
 
@@ -207,11 +209,16 @@ export function LogPage() {
             <li key={workout.id} className="flex items-center gap-s2 rounded-md border border-line bg-raised px-s2 py-s1">
               <div className="flex-1">
                 <p className="font-heading font-semibold capitalize">{workout.type.replaceAll("_", " ")}</p>
-                <p className="text-sm text-quiet">{workout.occurred_on} · {workout.duration_min} min</p>
+                <p className="text-sm text-quiet">{workout.occurred_on} · {workout.duration_min} min · {workout.status}</p>
+                {workout.review_note ? <p className="text-sm text-gold-soft">{workout.review_note}</p> : null}
               </div>
               <p className="font-display text-2xl">{formatPoints(workout.points_tenths)}</p>
-              <button type="button" className="text-sm text-sage" onClick={() => startEdit(workout)}>Edit</button>
-              <button type="button" className="text-sm text-gold-soft" onClick={() => void remove(workout.id)}>Delete</button>
+              {workout.status === "submitted" ? (
+                <>
+                  <button type="button" className="text-sm text-sage" onClick={() => startEdit(workout)}>Edit</button>
+                  <button type="button" className="text-sm text-gold-soft" onClick={() => void remove(workout.id)}>Delete</button>
+                </>
+              ) : null}
             </li>
           ))}
         </ul>

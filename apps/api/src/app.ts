@@ -4,6 +4,7 @@ import type { SendEmail } from "@cloudflare/workers-types";
 import { clubCatalog } from "@blackthorn/db/catalog";
 import { cloudflareEmailProvider, consoleEmailProvider, renderMagicLink, type EmailProvider } from "./email";
 import { randomToken, secretsEqual, sha256Hex } from "./tokens";
+import { registerAdminRoutes } from "./admin";
 import { registerAnalyticsRoutes } from "./analytics";
 import { registerWorkoutRoutes } from "./workouts";
 
@@ -230,6 +231,7 @@ export function createApp(): Hono<AppEnv> {
 
   registerWorkoutRoutes(app, currentSession);
   registerAnalyticsRoutes(app, currentSession);
+  registerAdminRoutes(app, currentSession);
 
   app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
   app.all("/auth/*", (c) => c.redirect("/login?error=invalid"));

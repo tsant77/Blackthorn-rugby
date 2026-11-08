@@ -195,6 +195,7 @@ export const scoringRuleVersions = sqliteTable("scoring_rule_versions", {
   backdateDays: integer("backdate_days").notNull(),
   configJson: text("config_json").notNull(),
   notes: text("notes"),
+  effectiveOn: text("effective_on"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "restrict" }),
   createdAt: createdAt(),
   activatedAt: integer("activated_at", { mode: "timestamp_ms" }),
@@ -270,11 +271,13 @@ export const pointTransactions = sqliteTable("point_transactions", {
   pointsTenths: integer("points_tenths").notNull(),
   reasonCode: text("reason_code").notNull(),
   reasonDetail: text("reason_detail"),
+  occurredOn: text("occurred_on"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "restrict" }),
   createdAt: createdAt(),
 }, (table) => [
   index("point_transactions_player_idx").on(table.clubId, table.playerProfileId, table.createdAt),
   index("point_transactions_workout_idx").on(table.workoutId),
+  index("point_transactions_adjustment_idx").on(table.playerProfileId, table.occurredOn),
   check(
     "point_transactions_kind_chk",
     sql`${table.kind} IN ('award', 'cap_reduction', 'reversal', 'adjustment')`,

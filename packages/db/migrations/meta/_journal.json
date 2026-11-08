@@ -22,6 +22,13 @@
       "when": 1794153284082,
       "tag": "0002_clever_speedball",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1794153616433,
+      "tag": "0003_naive_mercury",
+      "breakpoints": true
     }
   ]
 }

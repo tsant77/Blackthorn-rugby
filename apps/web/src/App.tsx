@@ -8,6 +8,9 @@ import { DesignPage } from "./pages/DesignPage";
 import { HomePage } from "./pages/HomePage";
 import { LogPage } from "./pages/LogPage";
 import { InvitePage } from "./pages/InvitePage";
+import { MembersPage } from "./pages/MembersPage";
+import { ModeratePage } from "./pages/ModeratePage";
+import { RulesPage } from "./pages/RulesPage";
 import { TeamPage } from "./pages/TeamPage";
 import { LoginPage } from "./pages/LoginPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
@@ -28,6 +31,9 @@ export function App() {
               <Route path="/log" element={<LogPage />} />
               <Route path="/board" element={<BoardPage />} />
               <Route path="/activity" element={<ActivityPage />} />
+              <Route path="/moderate" element={<ModeratePage />} />
+              <Route path="/members" element={<MembersPage />} />
+              <Route path="/rules" element={<RulesPage />} />
               <Route path="/team" element={<TeamPage />} />
               <Route path="/you" element={<ProfilePage />} />
               <Route path="/invite" element={<InvitePage />} />

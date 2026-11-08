@@ -1,6 +1,6 @@
 # Blackthorn Rugby — Offseason Performance Platform
 
-Phase 4 of 7 for Blackthorn Rugby Club. Players and coaches can log, and the home, team, and leaderboard views show week, month, and offseason totals. Coach moderation is next.
+Phase 5 of 7 for Blackthorn Rugby Club. Coaches can void or restore a workout, and admins can manage members, scoring versions, the offseason, and point adjustments. The ledger stays append-only.
 
 The club crest and colors come from [blackthornrugbyclub.com](https://www.blackthornrugbyclub.com). The app is a dark charcoal tool. Gold (`#F2B10B`) is the accent. The crest file is `apps/web/public/brand/logo.jpg`.
 
@@ -58,11 +58,26 @@ npm run dev --workspace @blackthorn/web
 
 Owner decisions are in `docs/DECISIONS.md`.
 
+## Phase 5 acceptance
+
+| Criterion | Status |
+| --- | --- |
+| Moderation queue with reject, void, and restore | Done |
+| Void and reject post a ledger reversal and an audit event; the player sees the status and reason | Done |
+| Member invite resend and revoke, role, deactivation, position, and availability | Done |
+| New scoring versions take effect on a future date and do not rewrite past ledger rows | Done |
+| Manual adjustments are ledger rows with a reason | Done |
+| Offseason dates, filtered audit log, workout and points CSV | Done |
+| Players receive 403 on coach and admin endpoints; coaches receive 403 on admin-only endpoints | Done |
+| Playwright: coach void drops the board | Done |
+| Mobile and desktop screenshots | `docs/screenshots/phase-5` |
+
 ## Still open
 
 - Which address sends mail, once the club domain is on Cloudflare Email Service (`EMAIL_FROM`).
-- Whether a coach who also plays should complete a player profile in this release. The invite role is a single role today.
+- Whether reject and void should differ for the player beyond the status word. Both remove the points.
+- Whether restore should re-score under the rule active that day. It currently puts back the points the reversal removed.
 
 ## Not in this phase
 
-Workout logging, leaderboard math, admin export, the service worker, and any deploy. See `docs/DEPLOYMENT.md`.
+Challenges, achievements, notifications, the service worker, and any deploy. See `docs/DEPLOYMENT.md`.
