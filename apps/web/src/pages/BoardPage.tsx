@@ -44,6 +44,7 @@ export function BoardPage() {
   return (
     <main className="mx-auto flex max-w-lg flex-col gap-s3 px-s2 py-s4">
       <div>
+        <p className="eyebrow">RAISE THE STANDARD</p>
         <h1 className="font-heading text-2xl font-semibold">Leaderboard</h1>
         <p className="text-sm text-quiet">{range}</p>
       </div>
@@ -74,7 +75,7 @@ export function BoardPage() {
       </label>
       {error ? <p role="alert" className="text-gold-soft">{error}</p> : null}
       {standings.length === 0 ? <p className="text-quiet">No scored sessions in this view yet.</p> : null}
-      <ol className="flex flex-col">
+      <ol className="board-list flex flex-col">
         {standings.map((row) => (
           <li key={row.profile_id} className={`flex items-center gap-s2 border-b border-line py-s1 ${row.profile_id === me?.profile?.id ? "text-gold-soft" : ""}`}>
             <span className="w-8 font-display text-2xl text-gold">{row.rank}</span>

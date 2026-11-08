@@ -47,7 +47,7 @@ export function ProfilePage() {
 
   return (
     <main className="mx-auto flex max-w-lg flex-col gap-s3 px-s2 py-s4">
-      <h1 className="font-heading text-2xl font-semibold">You</h1>
+      <div><p className="eyebrow">THE PLAYER BEHIND THE POINTS</p><h1 className="font-heading text-2xl font-semibold">You</h1></div>
       <section className="rounded-md border border-line bg-raised p-s2 shadow-card">
         <p className="font-heading font-semibold">{me?.profile?.rosterName ?? me?.user.name}</p>
         <p className="text-sm text-quiet">{me?.user.email}</p>
