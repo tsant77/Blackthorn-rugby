@@ -1,3 +1,4 @@
+import { registerScoringSettings } from "./scoring-settings";
 import { registerAccountRoutes, throttle } from "./accounts";
 import { Hono, type Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
@@ -204,6 +205,7 @@ export function createApp(): Hono<AppEnv> {
   app.get("/api/dev/mailbox", c => c.json({ error: "Not found" }, 404));
 
   registerWorkoutRoutes(app, currentSession);
+  registerScoringSettings(app, currentSession);
   registerAnalyticsRoutes(app, currentSession);
   registerAdminRoutes(app, currentSession);
   registerEngageRoutes(app, currentSession);

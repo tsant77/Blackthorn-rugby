@@ -1,3 +1,4 @@
+import { TrainingBalance, type Balance } from "../components/TrainingBalance";
 import { displayDate } from "../lib/dates";
 import { Flame, Plus, ArrowUpRight } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -8,17 +9,19 @@ import { Bars } from "../components/Bars";
 import { useSession } from "../session";
 
 interface Dashboard {
+  trainingBalance?: Balance;
   streak: number;
   week: { pointsTenths: number; sessions: number };
   month: { pointsTenths: number; sessions: number };
   offseason: { pointsTenths: number; sessions: number };
-  byType: { type: string; points_tenths: number; sessions: number }[];
+  byType: { type: string; label?: string; points_tenths: number; sessions: number }[];
   weeks: { start: string; pointsTenths: number }[];
 }
 
 interface RecentWorkout {
   id: string;
   type: string;
+  activity_label?: string;
   occurred_on: string;
   duration_min: number;
   points_tenths: number;
@@ -89,7 +92,7 @@ export function HomePage() {
               <ul className="mt-s2 flex flex-col gap-s1">
                 {dash.byType.map((row) => (
                   <li key={row.type} className="flex justify-between capitalize">
-                    <span>{row.type.replaceAll("_", " ")}</span>
+                    <span>{row.label ?? row.type.replaceAll("_", " ")}</span>
                     <span className="font-display text-xl">{formatPoints(row.points_tenths)}</span>
                   </li>
                 ))}
@@ -102,7 +105,7 @@ export function HomePage() {
         <div className="flex items-center justify-between"><h2 className="font-heading font-semibold">Recent activity</h2><Link to="/log" className="text-sm text-sage">View all</Link></div>
         {recent.status === "loading" ? <p role="status" className="text-sm text-quiet">Loading recent activity…</p>
           : recent.status === "error" ? <p role="alert" className="error-banner">Could not load recent activity.</p>
-          : recent.workouts.length ? recent.workouts.map((workout) => <article key={workout.id} className="session-card"><div><h3 className="font-heading font-semibold capitalize">{workout.type.replaceAll("_", " ")}</h3><p className="text-sm text-quiet">{displayDate(workout.occurred_on)} · {workout.duration_min} min</p></div><span className="font-display text-2xl text-gold">{formatPoints(workout.points_tenths)} <span className="font-body text-xs">PTS</span></span></article>) : <p className="text-sm text-quiet">Your first session starts the story. Log a workout to get going.</p>}
+          : recent.workouts.length ? recent.workouts.map((workout) => <article key={workout.id} className="session-card"><div><h3 className="font-heading font-semibold capitalize">{workout.activity_label ?? workout.type.replaceAll("_", " ")}</h3><p className="text-sm text-quiet">{displayDate(workout.occurred_on)} · {workout.duration_min} min</p></div><span className="font-display text-2xl text-gold">{formatPoints(workout.points_tenths)} <span className="font-body text-xs">PTS</span></span></article>) : <p className="text-sm text-quiet">Your first session starts the story. Log a workout to get going.</p>}
       </section> : null}
       <Link to="/team" className="rounded-md border border-line px-s2 py-s1 text-center font-heading font-semibold">Team dashboard</Link>
       {role === "admin" ? (
@@ -111,6 +114,7 @@ export function HomePage() {
       {staff ? (
         <Link to="/squad" className="rounded-md border border-line px-s2 py-s1 text-center font-heading font-semibold">Squad availability</Link>
       ) : null}
+      {dash?.trainingBalance ? <TrainingBalance balance={dash.trainingBalance} /> : null}
     </main>
   );
 }

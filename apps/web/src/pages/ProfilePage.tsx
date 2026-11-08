@@ -1,3 +1,5 @@
+import { TrainingBalance, type Balance } from "../components/TrainingBalance";
+import { ScoringHistory } from "../components/ScoringHistory";
 import { Award, Flame, Trophy, Medal, Footprints, Layers, LockKeyhole, Check } from "lucide-react";
 import { formatPoints } from "@blackthorn/scoring";
 import { AccountCredentials } from "../components/AccountCredentials";
@@ -10,6 +12,7 @@ import { useSession } from "../session";
 interface Badge { key: string; name: string; description: string; awarded_at: number | null; progress: { current: number; target: number; unit: string } }
 const badgeIcons = [Award, Medal, Trophy, Flame, Flame, Layers, Footprints];
 export function ProfilePage() {
+  const [balance, setBalance] = useState<Balance>([]);
   const { me, refresh } = useSession();
   const navigate = useNavigate();
   const [injuryStatus, setInjuryStatus] = useState(me?.profile?.injuryStatus ?? "available");
@@ -31,12 +34,13 @@ export function ProfilePage() {
     setProfileError(null);
     void Promise.all([
       api<{ badges: Badge[] }>("/api/badges"),
-      api<{ offseason: { pointsTenths: number; sessions: number }; streak: number }>("/api/dashboard"),
+      api<{ offseason: { pointsTenths: number; sessions: number }; streak: number; trainingBalance?: Balance }>("/api/dashboard"),
       api<{ standings: { profile_id: string; rank: number }[] }>("/api/leaderboard?period=week"),
       api<{ positions: RosterPosition[] }>("/api/roster-options"),
     ]).then(([awards, dash, board, roster]) => {
       if (!active) return;
       setBadges(awards.badges);
+      setBalance(dash.trainingBalance ?? []);
       setSummary({ points: dash.offseason.pointsTenths, sessions: dash.offseason.sessions, streak: dash.streak, rank: board.standings.find(row => row.profile_id === me.profile?.id)?.rank ?? null });
       const position = roster.positions.find(p => p.id === me.profile?.positionId);
       setIdentity({ position: position?.name ?? "No position", group: position?.group_name ?? "Coaches" });
@@ -97,6 +101,7 @@ export function ProfilePage() {
           })}
         </ul>
       </section>
+      {me?.profile ? <><TrainingBalance balance={balance} /><ScoringHistory /></> : null}
       <AccountCredentials />
       {me?.profile ? (
         <section className="flex flex-col gap-s2 rounded-md border border-line bg-raised p-s2">

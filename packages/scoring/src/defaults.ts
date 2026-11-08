@@ -1,4 +1,4 @@
-import type { Intensity, ScoringRule, TypeRule, WorkoutType } from "./types";
+import type { Intensity, ScoringRule, TypeRule } from "./types";
 
 const INTENSITY_HUNDREDTHS: Record<Intensity, number> = {
   easy: 85,
@@ -29,12 +29,11 @@ function typeRule(
 }
 
 /**
- * Recommended rule for a new club. Publishing it is an admin action in a
- * later phase; nothing in the database is seeded from this object.
- * Keep the numbers aligned with docs/SCORING_SPEC.md.
+ * Original v1 defaults retained for historical compatibility.
+ * New fitness recommendations are supplied by defaultRule() below.
  */
-export function defaultRule(): ScoringRule {
-  const types: Record<WorkoutType, TypeRule> = {
+export function legacyRule(): ScoringRule {
+  const types: Record<string, TypeRule> = {
     running: typeRule(150, {
       allowsDistance: true,
       maxDistanceM: 100_000,
@@ -69,4 +68,29 @@ export function defaultRule(): ScoringRule {
     intensityHundredths: { ...INTENSITY_HUNDREDTHS },
     intensityLoadHundredths: { ...INTENSITY_LOAD_HUNDREDTHS },
   };
+}
+
+/** Fitness defaults are published explicitly, never retroactively seeded into a live club. */
+export function defaultRule(): ScoringRule {
+  const rule = legacyRule();
+  const activities = {
+    sprint_hiit: ["Sprint / HIIT", 12, ["speed", "endurance"]],
+    rugby: ["Rugby training", 11, ["strength", "speed", "endurance"]],
+    running: ["Running", 10, ["endurance"]],
+    circuit_training: ["Circuit training", 10, ["strength", "endurance"]],
+    rower: ["Rowing", 9, ["strength", "endurance"]],
+    weight_training: ["Weight training", 9, ["strength"]],
+    basketball: ["Basketball", 8, ["speed", "endurance"]],
+    football: ["Football", 8, ["speed", "endurance"]],
+    walking: ["Walking / active recovery", 4, ["recovery"]],
+  } as const;
+  for (const [id, [label, points, categories]] of Object.entries(activities)) {
+    rule.types[id] = { ...typeRule(points * 100), ...rule.types[id], multiplierHundredths: points * 100, label, enabled: true, categories: [...categories] };
+  }
+  rule.dailyCapTenths = 1000;
+  rule.sessionCapTenths = 600;
+  rule.intensityHundredths = { easy: 75, moderate: 100, hard: 125, max: 140 };
+  rule.consistency = [{ days: 3, pointsTenths: 50 }, { days: 4, pointsTenths: 80 }, { days: 5, pointsTenths: 100 }];
+  rule.consistencyMinMinutes = 20;
+  return rule;
 }

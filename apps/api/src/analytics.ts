@@ -1,3 +1,4 @@
+import { trainingBalance } from "./fitness";
 import type { Context, Hono } from "hono";
 import { addDays } from "@blackthorn/scoring";
 import { clubCatalog } from "@blackthorn/db/catalog";
@@ -23,7 +24,7 @@ export function registerAnalyticsRoutes(
     if (!session.profile_id) return c.json({ error: "Create a training profile first." }, 409);
     const context = await scoringContext(c.env.DB);
     const profileId = session.profile_id;
-    const [week, month, offseason, byType, days] = await Promise.all([
+    const [week, month, offseason, byType, days, extraDays] = await Promise.all([
       periodTotal(c.env.DB, profileId, context.week.start, context.week.end),
       periodTotal(c.env.DB, profileId, context.month.start, context.month.end),
       periodTotal(c.env.DB, profileId, context.offseasonStart, context.offseasonEnd),
@@ -43,6 +44,9 @@ export function registerAnalyticsRoutes(
          WHERE w.player_profile_id = ? AND w.status IN ('submitted', 'approved') AND w.occurred_on >= ?
          GROUP BY w.occurred_on`,
       ).bind(profileId, addDays(context.week.start, -7 * 7)).all<{ occurred_on: string; points_tenths: number }>(),
+      c.env.DB.prepare(`SELECT occurred_on,SUM(points_tenths) AS points_tenths FROM point_transactions
+        WHERE club_id=? AND player_profile_id=? AND workout_id IS NULL AND occurred_on>=? GROUP BY occurred_on`)
+        .bind(CLUB_ID,profileId,addDays(context.week.start,-7*7)).all<{occurred_on:string;points_tenths:number}>(),
     ]);
     const dates = await c.env.DB.prepare(
       `SELECT DISTINCT occurred_on AS occurred_on FROM workouts
@@ -51,13 +55,25 @@ export function registerAnalyticsRoutes(
     ).bind(profileId, addDays(context.today, -120)).all<{ occurred_on: string }>();
     return c.json({
       today: context.today,
+      trainingBalance: await trainingBalance(c.env.DB,profileId,context.offseasonStart ?? context.week.start,context.offseasonEnd ?? context.today),
       streak: streakFrom(dates.results.map((row) => row.occurred_on), context.today),
       week: { ...context.week, ...week },
       month: { ...context.month, ...month },
       offseason: { start: context.offseasonStart, end: context.offseasonEnd, ...offseason },
-      byType: byType.results.map((row) => ({ ...row, points_tenths: Number(row.points_tenths), sessions: Number(row.sessions) })),
-      weeks: bucketWeeks(context.week.start, days.results),
+      byType: byType.results.map((row) => ({ ...row, label:context.rule.types[row.type]?.label ?? row.type.replaceAll("_"," "), points_tenths: Number(row.points_tenths), sessions: Number(row.sessions) })),
+      weeks: bucketWeeks(context.week.start, [...days.results,...extraDays.results]),
     });
+  });
+
+  app.get("/api/scoring-history", async c => {
+    const session = await currentSession(c);
+    if (!session?.profile_id) return c.json({ error: "Sign in required." },401);
+    const rows = await c.env.DB.prepare(`SELECT t.id,t.kind,t.points_tenths,t.reason_code,t.reason_detail,t.occurred_on,t.created_at,
+      t.workout_id,r.version,u.name AS actor_name,w.type,w.occurred_on AS workout_date
+      FROM point_transactions t JOIN scoring_rule_versions r ON r.id=t.rule_version_id
+      LEFT JOIN users u ON u.id=t.created_by LEFT JOIN workouts w ON w.id=t.workout_id
+      WHERE t.club_id=? AND t.player_profile_id=? ORDER BY t.created_at DESC,t.rowid DESC LIMIT 100`).bind(CLUB_ID,session.profile_id).all();
+    return c.json({ history: rows.results });
   });
 
   app.get("/api/team", async (c) => {

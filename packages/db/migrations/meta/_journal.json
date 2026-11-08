@@ -57,6 +57,13 @@
       "when": 1794170256452,
       "tag": "0007_player_login_links",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1794172051773,
+      "tag": "0008_fitness_scoring",
+      "breakpoints": true
     }
   ]
 }

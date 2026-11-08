@@ -9,6 +9,8 @@ export const WORKOUT_TYPES = [
   "basketball",
   "rugby",
   "football",
+  "sprint_hiit",
+  "walking",
 ] as const;
 
 export type WorkoutType = (typeof WORKOUT_TYPES)[number];
@@ -45,7 +47,13 @@ export interface WorkoutDraft {
   exercises?: ExerciseDraft[] | null;
 }
 
+export const FITNESS_CATEGORIES = ["strength", "speed", "endurance", "recovery"] as const;
+export type FitnessCategory = (typeof FITNESS_CATEGORIES)[number];
+
 export interface TypeRule {
+  label?: string;
+  enabled?: boolean;
+  categories?: FitnessCategory[];
   multiplierHundredths: number;
   allowsDistance: boolean;
   maxDistanceM: number | null;
@@ -56,6 +64,8 @@ export interface TypeRule {
 }
 
 export interface ScoringRule {
+  consistency?: { days: number; pointsTenths: number }[];
+  consistencyMinMinutes?: number;
   version: number;
   status: "draft" | "active" | "retired";
   dailyCapTenths: number;
