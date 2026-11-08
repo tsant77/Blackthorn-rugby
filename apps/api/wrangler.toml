@@ -1,0 +1,24 @@
+"$schema" = "../../node_modules/wrangler/config-schema.json"
+name = "blackthorn-rugby"
+main = "src/index.ts"
+compatibility_date = "2026-11-08"
+upload_source_maps = true
+
+[observability]
+enabled = true
+
+[observability.traces]
+enabled = true
+
+# Replace database_id after `wrangler d1 create blackthorn-rugby`.
+# Do not put a Cloudflare account id in this file.
+[[d1_databases]]
+binding = "DB"
+database_name = "blackthorn-rugby"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "../../packages/db/migrations"
+
+# R2 is optional and stays off until uploads are in scope.
+# [[r2_buckets]]
+# binding = "MEDIA"
+# bucket_name = "blackthorn-rugby-media"

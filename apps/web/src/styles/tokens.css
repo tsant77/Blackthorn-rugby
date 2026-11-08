@@ -1,0 +1,115 @@
+@import "tailwindcss";
+@config "../../tailwind.config.ts";
+
+/*
+  Dark performance theme.
+  Club brand hexes are from the Blackthorn Wix theme (--color_11 through --color_23).
+  Canvas colors are a warm charcoal chosen for this product, not the club site's sage page fill.
+*/
+:root {
+  color-scheme: dark;
+  --background: #121410;
+  --foreground: #f4f6f1;
+  --card: #1b1e19;
+  --card-foreground: #f4f6f1;
+  --popover: #242820;
+  --popover-foreground: #f4f6f1;
+  --primary: #f2b10b;
+  --primary-foreground: #223017;
+  --secondary: #223017;
+  --secondary-foreground: #c5dab5;
+  --muted: #242820;
+  --muted-foreground: #a8ad9f;
+  --accent: #1b1e19;
+  --accent-foreground: #c5dab5;
+  --destructive: #a33b32;
+  --destructive-foreground: #f4f6f1;
+  --border: #31362c;
+  --input: #31362c;
+  --ring: #f2b10b;
+  --radius: 8px;
+  --forest: #223017;
+  --sage: #c5dab5;
+  --sage-deep: #9bb687;
+  --pitch: #679146;
+  --leaf: #45612f;
+  --gold: #f2b10b;
+  --gold-soft: #fbe4ab;
+  --canvas: #121410;
+  --raised: #1b1e19;
+  --overlay: #242820;
+  --line: #31362c;
+  --ink: #f4f6f1;
+  --faint: #8e9486;
+  --danger: #a33b32;
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-heading: "Nunito Sans", "Avenir Next", "Century Gothic", sans-serif;
+  --font-body: "Lato", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
+  --font-heading: var(--font-heading);
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+}
+
+html {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-body);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--canvas);
+}
+
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  transform: translateY(-150%);
+  z-index: 20;
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
