@@ -42,6 +42,9 @@ export function LogPage() {
   const [minDate, setMinDate] = useState("");
   const [occurredOn, setOccurredOn] = useState("");
   const [workouts, setWorkouts] = useState<Workout[]>([]);
+  const historyGeneration = useRef(0);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -57,12 +60,32 @@ export function LogPage() {
   const types = estimateRule ? Object.entries(estimateRule.types).filter(([,r])=>r.enabled!==false).map(([id,r])=>[id,r.label ?? TYPES.find(t=>t[0]===id)?.[1] ?? id.replaceAll("_"," ")] as const) : TYPES;
 
   async function load() {
-    const body = await api<{ today: string; minDate: string; workouts: Workout[]; estimateRule?: ScoringRule }>("/api/workouts");
+    const generation = ++historyGeneration.current;
+    const body = await api<{ today: string; minDate: string; workouts: Workout[]; nextCursor: string | null; estimateRule?: ScoringRule }>("/api/workouts");
+    if (generation !== historyGeneration.current) return;
     setEstimateRule(body.estimateRule ?? null);
     setToday(body.today);
     setMinDate(body.minDate);
     setOccurredOn((current) => current || body.today);
     setWorkouts(body.workouts);
+    setNextCursor(body.nextCursor);
+  }
+
+  async function loadMore() {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    const generation = historyGeneration.current;
+    try {
+      const query = new URLSearchParams({ cursor: nextCursor, context: "none" });
+      const page = await api<{ workouts: Workout[]; nextCursor: string | null }>(`/api/workouts?${query}`);
+      if (generation !== historyGeneration.current) return;
+      setWorkouts(current => {
+        const have = new Set(current.map(workout => workout.id));
+        return [...current, ...page.workouts.filter(workout => !have.has(workout.id))];
+      });
+      setNextCursor(page.nextCursor);
+    } catch (caught) { setError(caught instanceof ApiError ? caught.message : "Could not load older workouts."); }
+    finally { setLoadingMore(false); }
   }
 
   useEffect(() => {
@@ -282,6 +305,7 @@ export function LogPage() {
             </li>
           ))}
         </ul>
+        {nextCursor ? <button type="button" disabled={loadingMore || pending} onClick={() => void loadMore()} className="text-sage">{loadingMore ? "Loading…" : "Load older sessions"}</button> : null}
       </section>
     </main>
   );
