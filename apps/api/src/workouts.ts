@@ -199,49 +199,17 @@ export function registerWorkoutRoutes(
     const session = await currentSession(c);
     if (!session) return c.json({ error: "Sign in required." }, 401);
     const context = await scoringContext(c.env.DB);
-    const period = c.req.query("period") === "week" ? "week" : "offseason";
-    const range = period === "week" ? context.week : { start: context.offseasonStart, end: context.offseasonEnd };
-    const groupId = c.req.query("groupId") || null;
-    const positionId = c.req.query("positionId") || null;
-    const rows = await c.env.DB.prepare(
-      `SELECT pr.id AS profile_id, pr.roster_name, pos.id AS position_id, pos.name AS position_name,
-              g.id AS group_id, g.name AS group_name,
-              COALESCE(SUM(t.points_tenths), 0) AS points_tenths,
-              COUNT(DISTINCT w.id) AS workout_count
-       FROM player_profiles pr
-       JOIN club_memberships m ON m.id = pr.membership_id AND m.club_id = ? AND m.status = 'active'
-       LEFT JOIN positions pos ON pos.id = pr.position_id
-       LEFT JOIN groups g ON g.id = pr.group_id
-       LEFT JOIN workouts w ON w.player_profile_id = pr.id AND w.club_id = ?
-         AND w.status IN ('submitted', 'approved') AND w.occurred_on >= ? AND w.occurred_on <= ?
-       LEFT JOIN point_transactions t ON t.workout_id = w.id
-       WHERE (? IS NULL OR g.id = ?) AND (? IS NULL OR pos.id = ?)
-       GROUP BY pr.id, pr.roster_name, pos.id, pos.name, g.id, g.name
-       ORDER BY points_tenths DESC, pr.roster_name ASC`,
-    ).bind(CLUB_ID, CLUB_ID, range.start, range.end, groupId, groupId, positionId, positionId).all<{
-      profile_id: string;
-      roster_name: string;
-      position_id: string | null;
-      position_name: string | null;
-      group_id: string | null;
-      group_name: string | null;
-      points_tenths: number;
-      workout_count: number;
-    }>();
-    let rank = 0;
-    let previous: number | null = null;
-    const standings = rows.results.map((row, index) => {
-      if (previous !== row.points_tenths) rank = index + 1;
-      previous = row.points_tenths;
-      return { rank, ...row, points_tenths: Number(row.points_tenths), workout_count: Number(row.workout_count) };
+    const period = c.req.query("period") === "week" || c.req.query("period") === "month" ? c.req.query("period")! : "offseason";
+    const range = period === "week" ? context.week : period === "month" ? context.month : { start: context.offseasonStart, end: context.offseasonEnd };
+    const filter = boardFilter(c.req.query("groupId") || null, c.req.query("positionId") || null);
+    const current = await standingsFor(c.env.DB, range.start, range.end, filter);
+    const previous = period === "week" ? await standingsFor(c.env.DB, context.lastWeek.start, context.lastWeek.end, filter) : [];
+    const previousRank = new Map(previous.map((row) => [row.profile_id, row.rank]));
+    const standings = current.map((row) => {
+      const prior = previousRank.get(row.profile_id) ?? null;
+      return { ...row, previousRank: prior, movement: prior == null ? null : prior - row.rank };
     });
-    return c.json({
-      period,
-      start: range.start,
-      end: range.end,
-      today: context.today,
-      standings,
-    });
+    return c.json({ period, start: range.start, end: range.end, today: context.today, standings });
   });
 
   app.get("/api/activity", async (c) => {
@@ -269,8 +237,8 @@ async function requirePlayer(
 ): Promise<PlayerSession | Response> {
   const session = await currentSession(c);
   if (!session) return c.json({ error: "Sign in required." }, 401);
-  if (session.role !== "player" || !session.profile_id) {
-    return c.json({ error: "Only players with a profile can log workouts." }, 403);
+  if (!session.profile_id) {
+    return c.json({ error: "Create a training profile before logging." }, 403);
   }
   return session;
 }
@@ -282,7 +250,7 @@ function athleteOf(session: PlayerSession): { injuryStatus: "available" | "limit
   return { injuryStatus, trainingLocked: session.training_locked === 1 };
 }
 
-async function scoringContext(db: D1Database) {
+export async function scoringContext(db: D1Database) {
   const club = await db.prepare("SELECT timezone FROM clubs WHERE id = ?").bind(CLUB_ID).first<{ timezone: string }>();
   const timeZone = club?.timezone ?? "America/New_York";
   const today = civilDateInTimeZone(new Date(), timeZone);
@@ -296,6 +264,10 @@ async function scoringContext(db: D1Database) {
     "SELECT start_on, end_on FROM competition_periods WHERE club_id = ? AND kind = 'offseason' AND status = 'active'",
   ).bind(CLUB_ID).first<{ start_on: string; end_on: string }>();
   const weekday = utcWeekday(today);
+  const week = { start: addDays(today, -weekday), end: addDays(today, 6 - weekday) };
+  const [year, month] = today.split("-").map(Number);
+  const monthText = String(month).padStart(2, "0");
+  const lastDay = new Date(Date.UTC(year ?? 2026, month ?? 1, 0)).getUTCDate();
   return {
     timeZone,
     today,
@@ -304,8 +276,79 @@ async function scoringContext(db: D1Database) {
     ruleId: ruleRow.id,
     offseasonStart: period?.start_on ?? null,
     offseasonEnd: period?.end_on ?? null,
-    week: { start: addDays(today, -weekday), end: addDays(today, 6 - weekday) },
+    week,
+    lastWeek: { start: addDays(week.start, -7), end: addDays(week.start, -1) },
+    month: { start: `${year}-${monthText}-01`, end: `${year}-${monthText}-${String(lastDay).padStart(2, "0")}` },
   };
+}
+
+interface BoardFilter {
+  coaches: boolean;
+  groupId: string | null;
+  positionId: string | null;
+}
+
+function boardFilter(groupId: string | null, positionId: string | null): BoardFilter {
+  if (groupId === "coaches") return { coaches: true, groupId: null, positionId: null };
+  return { coaches: false, groupId, positionId };
+}
+
+async function standingsFor(db: D1Database, start: string | null, end: string | null, filter: BoardFilter) {
+  const rows = await db.prepare(
+    `SELECT pr.id AS profile_id, pr.roster_name, m.role AS role,
+            pos.id AS position_id, pos.name AS position_name,
+            g.id AS group_id, g.name AS group_name,
+            COALESCE(SUM(t.points_tenths), 0) AS points_tenths,
+            COUNT(DISTINCT w.id) AS workout_count
+     FROM player_profiles pr
+     JOIN club_memberships m ON m.id = pr.membership_id AND m.club_id = ? AND m.status = 'active'
+     LEFT JOIN positions pos ON pos.id = pr.position_id
+     LEFT JOIN groups g ON g.id = pr.group_id
+     LEFT JOIN workouts w ON w.player_profile_id = pr.id AND w.club_id = ?
+       AND w.status IN ('submitted', 'approved') AND w.occurred_on >= ? AND w.occurred_on <= ?
+     LEFT JOIN point_transactions t ON t.workout_id = w.id
+     WHERE (
+       (? = 0 AND ? IS NULL AND ? IS NULL)
+       OR (? = 1 AND m.role IN ('coach', 'admin'))
+       OR (? = 0 AND ? IS NOT NULL AND g.id = ?)
+       OR (? = 0 AND ? IS NOT NULL AND pos.id = ?)
+     )
+     GROUP BY pr.id, pr.roster_name, m.role, pos.id, pos.name, g.id, g.name
+     ORDER BY points_tenths DESC, pr.roster_name ASC`,
+  ).bind(
+    CLUB_ID,
+    CLUB_ID,
+    start,
+    end,
+    filter.coaches ? 1 : 0,
+    filter.groupId,
+    filter.positionId,
+    filter.coaches ? 1 : 0,
+    filter.coaches ? 1 : 0,
+    filter.groupId,
+    filter.groupId,
+    filter.coaches ? 1 : 0,
+    filter.positionId,
+    filter.positionId,
+  ).all<{
+    profile_id: string;
+    roster_name: string;
+    role: string;
+    position_id: string | null;
+    position_name: string | null;
+    group_id: string | null;
+    group_name: string | null;
+    points_tenths: number;
+    workout_count: number;
+  }>();
+  let rank = 0;
+  let previous: number | null = null;
+  return rows.results.map((row, index) => {
+    const points = Number(row.points_tenths);
+    if (previous !== points) rank = index + 1;
+    previous = points;
+    return { ...row, rank, points_tenths: points, workout_count: Number(row.workout_count) };
+  });
 }
 
 function utcWeekday(iso: string): number {

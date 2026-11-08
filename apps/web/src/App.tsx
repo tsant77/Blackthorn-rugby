@@ -8,6 +8,7 @@ import { DesignPage } from "./pages/DesignPage";
 import { HomePage } from "./pages/HomePage";
 import { LogPage } from "./pages/LogPage";
 import { InvitePage } from "./pages/InvitePage";
+import { TeamPage } from "./pages/TeamPage";
 import { LoginPage } from "./pages/LoginPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { ProfilePage } from "./pages/ProfilePage";
@@ -27,6 +28,7 @@ export function App() {
               <Route path="/log" element={<LogPage />} />
               <Route path="/board" element={<BoardPage />} />
               <Route path="/activity" element={<ActivityPage />} />
+              <Route path="/team" element={<TeamPage />} />
               <Route path="/you" element={<ProfilePage />} />
               <Route path="/invite" element={<InvitePage />} />
               <Route path="/squad" element={<SquadPage />} />
@@ -53,7 +55,8 @@ function RequireSession() {
   if (loading) return <LoadingScreen />;
   if (!me) return <Navigate to="/login" replace />;
   if (error) return <EmptyState title="Could not load your session" body={error} />;
+  const staff = me.membership.role === "coach" || me.membership.role === "admin";
   if (me.needsOnboarding && location.pathname !== "/onboarding") return <Navigate to="/onboarding" replace />;
-  if (!me.needsOnboarding && location.pathname === "/onboarding") return <Navigate to="/" replace />;
+  if (!me.needsOnboarding && location.pathname === "/onboarding" && !(staff && !me.profile)) return <Navigate to="/" replace />;
   return <Outlet />;
 }

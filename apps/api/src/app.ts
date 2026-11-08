@@ -4,6 +4,7 @@ import type { SendEmail } from "@cloudflare/workers-types";
 import { clubCatalog } from "@blackthorn/db/catalog";
 import { cloudflareEmailProvider, consoleEmailProvider, renderMagicLink, type EmailProvider } from "./email";
 import { randomToken, secretsEqual, sha256Hex } from "./tokens";
+import { registerAnalyticsRoutes } from "./analytics";
 import { registerWorkoutRoutes } from "./workouts";
 
 const CLUB_ID = clubCatalog.id;
@@ -117,7 +118,6 @@ export function createApp(): Hono<AppEnv> {
   app.post("/api/onboarding", async (c) => {
     const session = await currentSession(c);
     if (!session) return c.json({ error: "Sign in required." }, 401);
-    if (session.role !== "player") return c.json({ error: "Only players complete a playing profile." }, 403);
     if (session.profile_id) return c.json({ error: "Profile already exists." }, 409);
     const body = await readJson(c);
     const rosterName = normalizeRosterName(body?.rosterName);
@@ -125,10 +125,16 @@ export function createApp(): Hono<AppEnv> {
     const injuryStatus = normalizeInjury(body?.injuryStatus) ?? "available";
     const injuryNote = normalizeNote(body?.injuryNote);
     if (!rosterName) return c.json({ error: "Enter the name you want on the roster." }, 400);
-    const position = await c.env.DB.prepare(
-      "SELECT id, group_id FROM positions WHERE id = ? AND club_id = ? AND group_id IS NOT NULL",
-    ).bind(positionId, CLUB_ID).first<{ id: string; group_id: string }>();
-    if (!position) return c.json({ error: "Choose a position." }, 400);
+    const staff = session.role === "coach" || session.role === "admin";
+    let position: { id: string; group_id: string } | null = null;
+    if (positionId) {
+      position = await c.env.DB.prepare(
+        "SELECT id, group_id FROM positions WHERE id = ? AND club_id = ? AND group_id IS NOT NULL",
+      ).bind(positionId, CLUB_ID).first<{ id: string; group_id: string }>();
+      if (!position) return c.json({ error: "Choose a position." }, 400);
+    } else if (!staff) {
+      return c.json({ error: "Choose a position." }, 400);
+    }
     const now = Date.now();
     const profileId = crypto.randomUUID();
     await c.env.DB.batch([
@@ -136,12 +142,12 @@ export function createApp(): Hono<AppEnv> {
         `INSERT INTO player_profiles (
           id, membership_id, roster_name, position_id, group_id, injury_status, training_locked, injury_note, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
-      ).bind(profileId, session.membership_id, rosterName, position.id, position.group_id, injuryStatus, injuryNote, now, now),
+      ).bind(profileId, session.membership_id, rosterName, position?.id ?? null, position?.group_id ?? null, injuryStatus, injuryNote, now, now),
       c.env.DB.prepare("UPDATE users SET name = ?, updated_at = ? WHERE id = ?").bind(rosterName, now, session.user_id),
       audit(c.env.DB, session, "profile_created", "player_profile", profileId, null, {
         rosterName,
-        positionId: position.id,
-        groupId: position.group_id,
+        positionId: position?.id ?? null,
+        groupId: position?.group_id ?? null,
         injuryStatus,
       }, now),
     ]);
@@ -223,6 +229,7 @@ export function createApp(): Hono<AppEnv> {
   });
 
   registerWorkoutRoutes(app, currentSession);
+  registerAnalyticsRoutes(app, currentSession);
 
   app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
   app.all("/auth/*", (c) => c.redirect("/login?error=invalid"));

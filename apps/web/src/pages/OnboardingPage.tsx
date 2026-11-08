@@ -16,12 +16,13 @@ export function OnboardingPage() {
   useEffect(() => {
     void api<{ positions: RosterPosition[] }>("/api/roster-options").then((body) => {
       setPositions(body.positions);
-      setPositionId(body.positions[0]?.id ?? "");
+      setPositionId((current) => current || (me?.membership.role === "player" ? body.positions[0]?.id ?? "" : ""));
     }).catch((caught: unknown) => {
       setError(caught instanceof ApiError ? caught.message : "Could not load positions.");
     });
-  }, []);
+  }, [me?.membership.role]);
 
+  const staff = me?.membership.role === "coach" || me?.membership.role === "admin";
   const selected = positions.find((position) => position.id === positionId);
 
   async function onSubmit(event: FormEvent) {
@@ -31,7 +32,7 @@ export function OnboardingPage() {
     try {
       await api("/api/onboarding", {
         method: "POST",
-        body: JSON.stringify({ rosterName, positionId, injuryStatus }),
+        body: JSON.stringify({ rosterName, positionId: positionId || undefined, injuryStatus }),
       });
       await refresh();
       navigate("/");
@@ -46,7 +47,9 @@ export function OnboardingPage() {
     <main className="mx-auto flex max-w-lg flex-col gap-s3 px-s2 py-s4">
       <div>
         <h1 className="font-heading text-2xl font-semibold">Join the roster</h1>
-        <p className="mt-s1 text-quiet">Pick the position you play. Your group follows from that.</p>
+        <p className="mt-s1 text-quiet">
+          {staff ? "Position is optional. Without one you show on the Coaches board, not forwards or backs." : "Pick the position you play. Your group follows from that."}
+        </p>
       </div>
       <form onSubmit={onSubmit} className="flex flex-col gap-s2 rounded-md border border-line bg-raised p-s2 shadow-card">
         <label className="flex flex-col gap-s1 text-sm text-quiet">
@@ -61,17 +64,18 @@ export function OnboardingPage() {
         <label className="flex flex-col gap-s1 text-sm text-quiet">
           Position
           <select
-            required
+            required={!staff}
             value={positionId}
             onChange={(event) => setPositionId(event.target.value)}
             className="rounded-md border border-line bg-canvas px-s2 py-s1 text-base text-ink"
           >
+            {staff ? <option value="">No position</option> : null}
             {positions.map((position) => (
               <option key={position.id} value={position.id}>{position.name}</option>
             ))}
           </select>
         </label>
-        <p className="text-sm text-quiet">Group: <span className="text-ink">{selected?.group_name ?? "—"}</span></p>
+        <p className="text-sm text-quiet">Group: <span className="text-ink">{selected?.group_name ?? (staff ? "Coaches" : "—")}</span></p>
         <label className="flex flex-col gap-s1 text-sm text-quiet">
           Availability
           <select

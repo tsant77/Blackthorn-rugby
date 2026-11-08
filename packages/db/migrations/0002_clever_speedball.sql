@@ -1,0 +1,1 @@
+CREATE INDEX `workouts_club_status_date_idx` ON `workouts` (`club_id`,`status`,`occurred_on`);

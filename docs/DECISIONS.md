@@ -14,4 +14,6 @@ Recorded 8 November 2026. These replace the Phase 1 open questions.
 | 8 | Distance is shown in miles. The database stores meters. |
 | 9 | No photo uploads this offseason. R2 is not bound. |
 
+| 10 | Updated for Phase 4. Coaches and admins may keep an optional training profile and log workouts. Position and group are optional for them. With no position they appear on the overall, weekly, and monthly boards and on a Coaches filter. They stay off the forwards, backs, and position boards until they set a position. Players still choose a position. |
+
 The first admin is not seeded. Set the `BOOTSTRAP_ADMIN_EMAIL` secret. The first magic-link request for that address creates the admin membership if the club has none. After that, the secret does nothing.

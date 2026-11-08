@@ -28,6 +28,7 @@ export function Shell() {
           {items.map((item) => (
             <SideLink key={item.to} to={item.to} end={item.end}>{item.label}</SideLink>
           ))}
+          <SideLink to="/team">Team</SideLink>
           {staff ? <SideLink to="/squad">Squad</SideLink> : null}
           {me?.membership.role === "admin" ? <SideLink to="/invite">Invite</SideLink> : null}
         </nav>

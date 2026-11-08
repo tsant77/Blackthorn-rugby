@@ -15,6 +15,13 @@
       "when": 1794152164254,
       "tag": "0001_jazzy_nicolaos",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794153284082,
+      "tag": "0002_clever_speedball",
+      "breakpoints": true
     }
   ]
 }

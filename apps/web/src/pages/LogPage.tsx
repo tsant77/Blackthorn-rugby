@@ -32,6 +32,8 @@ export function LogPage() {
   const [distanceMiles, setDistanceMiles] = useState("");
   const [notes, setNotes] = useState("");
   const [today, setToday] = useState("");
+  const [minDate, setMinDate] = useState("");
+  const [occurredOn, setOccurredOn] = useState("");
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
@@ -40,8 +42,10 @@ export function LogPage() {
   const distance = type === "running" || type === "rower";
 
   async function load() {
-    const body = await api<{ today: string; workouts: Workout[] }>("/api/workouts");
+    const body = await api<{ today: string; minDate: string; workouts: Workout[] }>("/api/workouts");
     setToday(body.today);
+    setMinDate(body.minDate);
+    setOccurredOn((current) => current || body.today);
     setWorkouts(body.workouts);
   }
 
@@ -55,6 +59,7 @@ export function LogPage() {
     setNotes("");
     setEditing(null);
     setIntensity("moderate");
+    setOccurredOn(today);
   }
 
   async function onSubmit(event: FormEvent) {
@@ -64,7 +69,7 @@ export function LogPage() {
     setResult(null);
     const payload: Record<string, unknown> = {
       type,
-      occurredOn: today,
+      occurredOn,
       durationMin: Number(durationMin),
       intensity,
       notes,
@@ -102,6 +107,7 @@ export function LogPage() {
     setIntensity((workout.intensity as (typeof INTENSITIES)[number]) ?? "moderate");
     setDistanceMiles(workout.distance_miles == null ? "" : String(workout.distance_miles));
     setNotes(workout.notes ?? "");
+    setOccurredOn(workout.occurred_on);
     setResult(null);
   }
 
@@ -109,7 +115,7 @@ export function LogPage() {
     <main className="mx-auto flex max-w-lg flex-col gap-s3 px-s2 py-s4">
       <div>
         <h1 className="font-heading text-2xl font-semibold">{editing ? "Edit workout" : "Log a workout"}</h1>
-        <p className="text-sm text-quiet">{today ? `Date ${today}, Eastern Time` : "Eastern Time"}</p>
+        <p className="text-sm text-quiet">Eastern Time. You can log up to 7 days back.</p>
       </div>
       {result ? <p role="status" className="rounded-md border border-gold bg-overlay px-s2 py-s2 font-display text-4xl text-gold">{result}</p> : null}
       <form onSubmit={onSubmit} className="flex flex-col gap-s2">
@@ -126,6 +132,18 @@ export function LogPage() {
             </button>
           ))}
         </div>
+        <label className="flex flex-col gap-s1 text-sm text-quiet">
+          Date
+          <input
+            type="date"
+            required
+            min={minDate}
+            max={today}
+            value={occurredOn}
+            onChange={(event) => setOccurredOn(event.target.value)}
+            className="rounded-md border border-line bg-canvas px-s2 py-s1 text-base text-ink"
+          />
+        </label>
         <label className="flex flex-col gap-s1 text-sm text-quiet">
           Minutes
           <input

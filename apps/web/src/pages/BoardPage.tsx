@@ -5,6 +5,8 @@ import { useSession } from "../session";
 
 interface Standing {
   rank: number;
+  previousRank: number | null;
+  movement: number | null;
   profile_id: string;
   roster_name: string;
   position_name: string | null;
@@ -15,7 +17,7 @@ interface Standing {
 
 export function BoardPage() {
   const { me } = useSession();
-  const [period, setPeriod] = useState<"offseason" | "week">("week");
+  const [period, setPeriod] = useState<"offseason" | "week" | "month">("week");
   const [filter, setFilter] = useState("all");
   const [positions, setPositions] = useState<RosterPosition[]>([]);
   const [standings, setStandings] = useState<Standing[]>([]);
@@ -28,7 +30,7 @@ export function BoardPage() {
 
   useEffect(() => {
     const params = new URLSearchParams({ period });
-    if (filter === "group_forwards" || filter === "group_backs") params.set("groupId", filter);
+    if (filter === "group_forwards" || filter === "group_backs" || filter === "coaches") params.set("groupId", filter);
     else if (filter !== "all") params.set("positionId", filter);
     void api<{ start: string; end: string; standings: Standing[] }>(`/api/leaderboard?${params}`).then((body) => {
       setStandings(body.standings);
@@ -45,16 +47,16 @@ export function BoardPage() {
         <h1 className="font-heading text-2xl font-semibold">Leaderboard</h1>
         <p className="text-sm text-quiet">{range}</p>
       </div>
-      <div className="grid grid-cols-2 gap-s1" role="group" aria-label="Period">
-        {(["week", "offseason"] as const).map((value) => (
+      <div className="grid grid-cols-3 gap-s1" role="group" aria-label="Period">
+        {(["week", "month", "offseason"] as const).map((value) => (
           <button
             key={value}
             type="button"
             aria-pressed={period === value}
             onClick={() => setPeriod(value)}
-            className={`min-h-11 rounded-md border font-heading font-semibold capitalize ${period === value ? "border-gold bg-gold text-forest" : "border-line text-ink"}`}
+            className={`min-h-11 rounded-md border font-heading text-sm font-semibold capitalize ${period === value ? "border-gold bg-gold text-forest" : "border-line text-ink"}`}
           >
-            {value === "week" ? "This week" : "Offseason"}
+            {value === "week" ? "This week" : value === "month" ? "Month" : "Offseason"}
           </button>
         ))}
       </div>
@@ -64,6 +66,7 @@ export function BoardPage() {
           <option value="all">Everyone</option>
           <option value="group_forwards">Forwards</option>
           <option value="group_backs">Backs</option>
+          <option value="coaches">Coaches</option>
           {positions.map((position) => (
             <option key={position.id} value={position.id}>{position.name}</option>
           ))}
@@ -77,7 +80,7 @@ export function BoardPage() {
             <span className="w-8 font-display text-2xl text-gold">{row.rank}</span>
             <span className="flex-1">
               <span className="block font-heading font-semibold">{row.roster_name}</span>
-              <span className="text-sm text-quiet">{row.position_name} · {row.group_name} · {row.workout_count} sessions</span>
+              <span className="text-sm text-quiet">{row.position_name ?? "No position"} · {row.group_name ?? "Coaches"} · {row.workout_count} sessions{period === "week" ? ` · ${movementLabel(row)}` : ""}</span>
             </span>
             <span className="font-display text-2xl">{formatPoints(row.points_tenths)}</span>
           </li>
@@ -85,4 +88,11 @@ export function BoardPage() {
       </ol>
     </main>
   );
+}
+
+function movementLabel(row: Standing): string {
+  if (row.previousRank == null) return "New";
+  if (row.movement === 0) return "Same";
+  if ((row.movement ?? 0) > 0) return `Up ${row.movement}`;
+  return `Down ${Math.abs(row.movement ?? 0)}`;
 }

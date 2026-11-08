@@ -230,6 +230,7 @@ export const workouts = sqliteTable("workouts", {
   updatedAt: updatedAt(),
 }, (table) => [
   index("workouts_club_date_idx").on(table.clubId, table.occurredOn),
+  index("workouts_club_status_date_idx").on(table.clubId, table.status, table.occurredOn),
   index("workouts_player_date_idx").on(table.playerProfileId, table.occurredOn),
   uniqueIndex("workouts_idempotency_unique")
     .on(table.playerProfileId, table.clientRequestId)
