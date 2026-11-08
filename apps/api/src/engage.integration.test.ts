@@ -2,7 +2,7 @@ import { addDays } from "@blackthorn/scoring";
 import { beforeAll, describe, expect, it } from "vitest";
 import app, { type Env } from "./app";
 import { runScheduledJobs } from "./jobs";
-import { openTestDatabase } from "./test-db";
+import { openTestDatabase, testMemberSession } from "./test-db";
 
 describe("badges, challenges, and notifications", () => {
   let env: Env;
@@ -14,10 +14,8 @@ describe("badges, challenges, and notifications", () => {
   beforeAll(async () => {
     env = {
       DB: openTestDatabase(),
-      EMAIL_PROVIDER: "console",
+      EMAIL_PROVIDER: "none",
       APP_ORIGIN: "http://localhost",
-      BOOTSTRAP_ADMIN_EMAIL: "coach@blackthorn.test",
-      EMAIL_FROM: "noreply@blackthorn.test",
     };
     admin = await signIn("coach@blackthorn.test");
     player = await invite("wing@blackthorn.test", "player");
@@ -70,7 +68,7 @@ describe("badges, challenges, and notifications", () => {
     expect(notes.notifications.filter((note) => note.kind === "badge")).toHaveLength(earned.length);
   });
 
-  it("tells the player a void was a mistake and does not email until they opt in", async () => {
+  it("tells the player a void was a mistake and never sends email even when legacy settings opt in", async () => {
     const history = await json<{ workouts: { id: string; type: string }[] }>("/api/workouts", player);
     const workout = history.workouts.find((row) => row.type === "football");
     const removed = await app.request(`http://localhost/api/moderation/${workout?.id}`, {
@@ -84,8 +82,6 @@ describe("badges, challenges, and notifications", () => {
     expect(note?.body).toContain("logged by mistake");
     expect(note?.body).toContain("Wrong sport");
     expect(inbox.unread).toBeGreaterThan(0);
-    const mailbox = await json<{ messages: { subject: string }[] }>(`/api/dev/mailbox?to=${encodeURIComponent("wing@blackthorn.test")}`, admin);
-    expect(mailbox.messages.some((message) => message.subject === "Workout voided")).toBe(false);
     const read = await app.request(`http://localhost/api/notifications/${note?.id}/read`, { method: "POST", headers: { cookie: player } }, env);
     expect(read.status).toBe(200);
     const opted = await app.request("http://localhost/api/me/notifications", {
@@ -93,16 +89,16 @@ describe("badges, challenges, and notifications", () => {
       headers: { "content-type": "application/json", cookie: player },
       body: JSON.stringify({ emailNotifications: true }),
     }, env);
-    expect(opted.status).toBe(200);
+    expect(opted.status).toBe(410);
     const restored = await app.request(`http://localhost/api/moderation/${workout?.id}`, {
       method: "POST",
       headers: { "content-type": "application/json", cookie: admin },
       body: JSON.stringify({ action: "restore", reason: "It was football" }),
     }, env);
     expect(restored.status).toBe(200);
-    const after = await json<{ messages: { subject: string; text_body: string }[] }>(`/api/dev/mailbox?to=${encodeURIComponent("wing@blackthorn.test")}`, admin);
-    const mail = after.messages.find((message) => message.subject === "Workout restored");
-    expect(mail?.text_body).toContain("It was football");
+    const after = await json<{ notifications: { title: string; body: string }[] }>("/api/notifications", player);
+    expect(after.notifications.find(n => n.title === "Workout restored")?.body).toContain("It was football");
+    expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM dev_mailbox").bind().first<{ n: number }>())?.n).toBe(0);
   });
 
   it("blocks a player from creating a challenge and shows group progress", async () => {
@@ -150,31 +146,12 @@ describe("badges, challenges, and notifications", () => {
     return response.json() as Promise<T>;
   }
 
-  async function signIn(email: string): Promise<string> {
-    await app.request("http://localhost/api/auth/request", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.90" },
-      body: JSON.stringify({ email }),
-    }, env);
-    return accept(email);
+  async function signIn(label: string): Promise<string> {
+    return testMemberSession(env.DB, label, "admin");
   }
 
-  async function invite(email: string, role: string): Promise<string> {
-    await app.request("http://localhost/api/invitations", {
-      method: "POST",
-      headers: { "content-type": "application/json", cookie: admin },
-      body: JSON.stringify({ email, role }),
-    }, env);
-    return accept(email);
-  }
-
-  async function accept(email: string): Promise<string> {
-    const mailbox = await app.request(`http://localhost/api/dev/mailbox?to=${encodeURIComponent(email)}`, {}, env);
-    const body = await mailbox.json() as { messages: { text_body: string }[] };
-    const link = body.messages[0]?.text_body.match(/http:\/\/localhost\S+/)?.[0];
-    if (!link) throw new Error(`No link for ${email}`);
-    const verified = await app.request(link, {}, env);
-    return verified.headers.get("set-cookie")?.split(";")[0] ?? "";
+  async function invite(label: string, role: string): Promise<string> {
+    return testMemberSession(env.DB, label, role);
   }
 
   async function onboard(cookie: string, rosterName: string, positionName: string): Promise<void> {

@@ -1,208 +1,173 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import app, { type Env } from "./app";
-import { openTestDatabase } from "./test-db";
-import { hashPassword, verifyPassword } from "./passwords";
+import { openTestDatabase, testMemberSession } from "./test-db";
+import { randomToken, sha256Hex } from "./tokens";
 
-const password = "rugby training passphrase";
-describe("email-free team accounts", () => {
+const cookie = (r: Response) => r.headers.get("set-cookie")?.split(";")[0] ?? "";
+const tokenOf = (url: string) => new URL(url).hash.slice(7);
+
+describe("Free-compatible personal player links", () => {
   let env: Env, admin: string;
-  const cookie = (r: Response) => r.headers.get("set-cookie")?.split(";")[0] ?? "";
   async function request(path: string, body?: unknown, auth = "", method = "POST", extra: Record<string, string> = {}) {
     return app.request("https://club.test" + path, { method, headers: { "content-type": "application/json", ...(auth ? { cookie: auth } : {}), ...extra }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }, env);
   }
-  async function link() {
+  async function teamLink() {
     const r = await request("/api/registration", { action: "rotate" }, admin);
     expect(r.status).toBe(201);
-    return new URL((await r.json() as { url: string }).url).hash.slice(7);
+    return tokenOf((await r.json() as { url: string }).url);
   }
-  async function register(token: string, username = "wing.one", extra: Record<string, unknown> = {}) {
-    return request("/api/auth/register", { token, username, fullName: "Test Wing", password, confirmPassword: password, positionId: "pos_fullback", groupId: "group_backs", ...extra });
+  async function register(token: string, extra: Record<string, unknown> = {}) {
+    return request("/api/auth/register", { token, fullName: "Test Wing", positionId: "pos_fullback", groupId: "group_backs", ...extra });
+  }
+  async function player() {
+    const r = await register(await teamLink());
+    expect(r.status).toBe(201);
+    const { url } = await r.json() as { url: string };
+    const me = await (await request("/api/me", undefined, cookie(r), "GET")).json() as { user: { id: string }; membership: { id: string }; profile: { id: string } };
+    return { auth: cookie(r), token: tokenOf(url), url, id: me.user.id, membership: me.membership.id, profile: me.profile.id };
   }
   beforeEach(async () => {
     env = { DB: openTestDatabase(), BOOTSTRAP_TOKEN: "test-setup", EMAIL_PROVIDER: "none" };
-    const r = await request("/api/setup", { name: "Coach", token: "test-setup" });
-    admin = cookie(r);
+    admin = cookie(await request("/api/setup", { name: "Coach", token: "test-setup" }));
   });
 
-  it("stores salted, versioned hashes and verifies correct passwords only", async () => {
-    const a = await hashPassword(password), b = await hashPassword(password);
-    expect(a).not.toBe(b);
-    expect(a).not.toContain(password);
-    expect(a).toMatch(/^scrypt\$1\$32768\$8\$3\$/);
-    expect(await verifyPassword(password, a)).toBe(true);
-    expect(await verifyPassword("incorrect password", a)).toBe(false);
-    expect(await verifyPassword(password, null)).toBe(false);
-    expect(await verifyPassword(password, "invalid")).toBe(false);
+  it("registers two separate players with one team link, ignores privileged fields, and stores only token hashes", async () => {
+    const shared = await teamLink();
+    const a = await register(shared, { role: "admin", status: "invited", points: 9000 });
+    const b = await register(shared);
+    expect(a.status).toBe(201); expect(b.status).toBe(201);
+    const first = await a.json() as { url: string }, second = await b.json() as { url: string };
+    const token = tokenOf(first.url);
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/); expect(first.url).not.toBe(second.url); expect(token).not.toBe(shared);
+    const rows = await env.DB.prepare("SELECT token_hash FROM player_login_links").bind().all<{ token_hash: string }>();
+    expect(rows.results).toHaveLength(2); expect(rows.results.map(r => r.token_hash)).toContain(await sha256Hex(token));
+    expect(JSON.stringify(rows.results)).not.toContain(token);
+    const me = await (await request("/api/me", undefined, cookie(a), "GET")).json() as { membership: { role: string }; needsOnboarding: boolean; user: { email: string } };
+    expect(me.membership.role).toBe("player"); expect(me.needsOnboarding).toBe(false); expect(me.user.email).toBe("");
+    expect(a.headers.get("set-cookie")).toMatch(/HttpOnly/); expect(a.headers.get("set-cookie")).toMatch(/Secure/);
+    expect(a.headers.get("set-cookie")).toMatch(/SameSite=Lax/); expect(a.headers.get("set-cookie")).toMatch(/Max-Age=15552000/);
+    expect(a.headers.get("cache-control")).toBe("no-store"); expect(a.headers.get("referrer-policy")).toBe("no-referrer");
+    expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM credentials").bind().first<{ n: number }>())?.n).toBe(0);
+    expect((await request("/api/auth/login", { token: shared })).status).toBe(401);
+    expect((await request("/api/auth/register", { token })).status).toBe(410);
   });
 
-  it("registers multiple players from one permanent link, fixes roles, and normalizes usernames", async () => {
-    const token = await link();
-    const first = await register(token, "Wing.One", { role: "admin", status: "invited", points: 9000 });
-    expect(first.status).toBe(201);
-    expect(first.headers.get("set-cookie")).toMatch(/HttpOnly/i);
-    expect(first.headers.get("set-cookie")).toMatch(/Secure/i);
-    expect(first.headers.get("set-cookie")).toMatch(/SameSite=Lax/i);
-    expect(first.headers.get("set-cookie")).toMatch(/Max-Age=15552000/i);
-    expect(first.headers.get("cache-control")).toBe("no-store");
-    const me = await request("/api/me", undefined, cookie(first), "GET");
-    const player = await me.json() as { membership: { role: string }; needsOnboarding: boolean; pendingApproval: boolean; user: { email: string } };
-    expect(player.membership.role).toBe("player");
-    expect(player.needsOnboarding).toBe(false);
-    expect(player.pendingApproval).toBe(false);
-    expect(player.user.email).toBe("");
-    expect((await register(token, "second.wing")).status).toBe(201);
-    expect((await register(token, "WING.ONE")).status).toBe(409);
-    const users = await env.DB.prepare("SELECT COUNT(*) AS n FROM users").bind().first<{ n: number }>();
-    expect(users?.n).toBe(3); // no orphan user from the duplicate
-    await expect(env.DB.prepare("UPDATE credentials SET username='WING.ONE' WHERE username='second.wing'").bind().run()).rejects.toThrow(/UNIQUE/);
-    const stored = await env.DB.prepare("SELECT token_hash FROM team_registration").bind().first<{ token_hash: string }>();
-    expect(stored?.token_hash).not.toBe(token);
+  it("supports repeated logins on multiple devices, persistent visits, sliding sessions, and independent logout", async () => {
+    const p = await player();
+    const one = await request("/api/auth/login", { token: p.token });
+    const two = await request("/api/auth/login", { token: p.token });
+    expect(one.status).toBe(200); expect(two.status).toBe(200); expect(cookie(one)).not.toBe(cookie(two));
+    for (const auth of [p.auth, cookie(one), cookie(two)]) expect((await request("/api/me", undefined, auth, "GET")).status).toBe(200);
+    await env.DB.prepare("UPDATE sessions SET expires_at=? WHERE user_id=?").bind(Date.now()+1000, p.id).run();
+    expect((await request("/api/me", undefined, cookie(two), "GET")).headers.get("set-cookie")).toMatch(/Max-Age=15552000/);
+    await request("/api/auth/logout", {}, cookie(one));
+    expect((await request("/api/me", undefined, cookie(one), "GET")).status).toBe(401);
+    expect((await request("/api/me", undefined, cookie(two), "GET")).status).toBe(200);
   });
 
-  it("validates public registration, expiry, disable and rotation without affecting accounts", async () => {
-    const token = await link();
-    expect((await register("invalid")).status).toBe(410);
-    expect((await register(token, "bad username")).status).toBe(400);
-    expect((await register(token, "test", { password: "short", confirmPassword: "short" })).status).toBe(400);
-    expect((await register(token, "test", { confirmPassword: "different" })).status).toBe(400);
-    expect((await register(token, "test", { groupId: "group_forwards" })).status).toBe(400);
-    expect((await register(token, "test", { fullName: "<script>alert(1)</script>" })).status).toBe(400);
-    const r = await register(token);
-    await request("/api/registration", { enabled: false }, admin);
-    expect((await register(token, "disabled")).status).toBe(410);
-    await request("/api/registration", { enabled: true }, admin);
-    expect((await request("/api/registration/options", { token })).status).toBe(200);
-    const next = await link();
-    expect((await register(token, "rotated")).status).toBe(410);
-    expect((await request("/api/me", undefined, cookie(r), "GET")).status).toBe(200);
-    await env.DB.prepare("UPDATE team_registration SET expires_at=1").bind().run();
-    expect((await register(next, "expired")).status).toBe(410);
+  it("lets coach/admin recover a player, revokes all old sessions and links, and preserves training data", async () => {
+    const p = await player();
+    const logged = await request("/api/workouts", { type: "running", durationMin: 40, clientRequestId: "link-migration-1111" }, p.auth);
+    expect(logged.status).toBe(201);
+    const before = await env.DB.prepare("SELECT * FROM point_transactions").bind().all();
+    const coach = await testMemberSession(env.DB, "Recovery Coach", "coach");
+    const rotated = await request("/api/player-login-links", { userId: p.id, action: "rotate" }, coach);
+    expect(rotated.status).toBe(201);
+    const next = tokenOf((await rotated.json() as { url: string }).url);
+    expect((await request("/api/auth/login", { token: p.token })).status).toBe(401);
+    expect((await request("/api/me", undefined, p.auth, "GET")).status).toBe(401);
+    const signed = await request("/api/auth/login", { token: next }); expect(signed.status).toBe(200);
+    const me = await (await request("/api/me", undefined, cookie(signed), "GET")).json() as { user: { id: string }; profile: { id: string } };
+    expect(me.user.id).toBe(p.id); expect(me.profile.id).toBe(p.profile);
+    expect((await env.DB.prepare("SELECT * FROM point_transactions").bind().all()).results).toEqual(before.results);
+    expect((await request("/api/player-login-links", { userId: p.id, action: "revoke" }, admin)).status).toBe(200);
+    expect((await request("/api/auth/login", { token: next })).status).toBe(401);
+    expect((await request("/api/me", undefined, cookie(signed), "GET")).status).toBe(401);
   });
 
-  it("logs in on a new device, uses generic failures, revokes replaced sessions and logs out", async () => {
-    const created = await register(await link());
-    const auth = cookie(created);
-    for (const input of [{ username: "wing.one", password: "wrong" }, { username: "absent", password }]) {
-      const r = await request("/api/auth/login", input);
-      expect(r.status).toBe(401);
-      expect(await r.json()).toEqual({ error: "Username or password is incorrect." });
-    }
-    const login = await request("/api/auth/login", { username: "WING.ONE", password }, auth);
-    expect(login.status).toBe(200);
-    expect(cookie(login)).not.toBe(auth);
-    expect((await request("/api/me", undefined, auth, "GET")).status).toBe(401);
-    const second = await request("/api/auth/login", { username: "wing.one", password });
-    expect(second.status).toBe(200);
-    await request("/api/auth/logout", {}, cookie(login));
-    expect((await request("/api/me", undefined, cookie(login), "GET")).status).toBe(401);
-    expect((await request("/api/me", undefined, cookie(second), "GET")).status).toBe(200);
-    const hash = cookie(second).split("=")[1]!;
-    const { sha256Hex } = await import("./tokens");
-    await env.DB.prepare("UPDATE sessions SET expires_at=? WHERE token_hash=?").bind(Date.now()+1000, await sha256Hex(hash)).run();
-    const slid = await request("/api/me", undefined, cookie(second), "GET");
-    expect(slid.headers.get("set-cookie")).toContain("Max-Age=15552000");
-  });
-
-  it("enforces admin boundaries, CSRF, body limits, and deactivation", async () => {
-    const created = await register(await link());
-    const player = cookie(created);
-    for (const path of ["/api/registration", "/api/password-resets"]) {
-      expect((await request(path, { action: "rotate", userId: "x" })).status).toBe(401);
-      expect((await request(path, { action: "rotate", userId: "x" }, player)).status).toBe(403);
-    }
-    expect((await request("/api/registration", undefined, player, "GET")).status).toBe(403);
-    expect((await request("/api/members", undefined, player, "GET")).status).toBe(403);
-    expect((await request("/api/auth/login", { username: "wing.one", password }, "", "POST", { origin: "https://evil.test" })).status).toBe(403);
-    expect((await request("/api/auth/register", { token: "a".repeat(9000) })).status).toBe(413);
-    const me = await (await request("/api/me", undefined, player, "GET")).json() as { membership: { id: string } };
-    expect((await request("/api/members/" + me.membership.id, { status: "deactivated" }, admin, "PATCH")).status).toBe(200);
-    expect((await request("/api/auth/login", { username: "wing.one", password })).status).toBe(401);
-    expect((await request("/api/me", undefined, player, "GET")).status).toBe(401);
-    await request("/api/members/" + me.membership.id, { status: "active" }, admin, "PATCH");
-    expect((await request("/api/me", undefined, player, "GET")).status).toBe(401);
-    expect((await request("/api/auth/login", { username: "wing.one", password })).status).toBe(200);
-  });
-
-  it("limits login by account across IPs and registration by IP", async () => {
-    const token = await link();
-    // Pre-fill the atomic buckets rather than paying for 15 intentional hash verifications.
-    const { sha256Hex } = await import("./tokens");
-    const start = Math.floor(Date.now()/900000)*900000;
-    await env.DB.prepare("INSERT INTO auth_limits(bucket,window_start,attempts) VALUES(?,?,15)").bind("login-account:"+await sha256Hex("target"),start).run();
-    expect((await request("/api/auth/login", { username: "target", password }, "", "POST", { "cf-connecting-ip": "203.0.113.1" })).status).toBe(429);
-    expect((await request("/api/auth/login", { username: "target", password }, "", "POST", { "cf-connecting-ip": "203.0.113.2" })).status).toBe(429);
-    for (let i=0;i<60;i++) await request("/api/auth/register", { token: "invalid" });
-    const limited = await register(token);
-    expect(limited.status).toBe(429);
-    expect(limited.headers.get("retry-after")).toBeTruthy();
-  });
-
-  it("resets passwords once, rejects expired/replaced links, and revokes sessions and legacy sign-in links", async () => {
-    const created = await register(await link());
-    const player = cookie(created);
-    const me = await (await request("/api/me", undefined, player, "GET")).json() as { user: { id: string } };
-    const legacy = await request("/api/signin-links", {}, player);
-    const legacyUrl = (await legacy.json() as { url: string }).url;
-    const makeReset = async () => {
-      const r = await request("/api/password-resets", { userId: me.user.id }, admin);
-      expect(r.status).toBe(201);
-      return new URL((await r.json() as { url: string }).url).hash.slice(7);
-    };
-    const old = await makeReset(), token = await makeReset();
-    expect((await request("/api/auth/reset", { token: old, password, confirmPassword: password })).status).toBe(410);
-    const next = "another rugby passphrase";
-    const reset = await request("/api/auth/reset", { token, password: next, confirmPassword: next });
-    expect(reset.status).toBe(200);
-    expect(reset.headers.get("set-cookie")).toBeNull();
-    expect((await request("/api/me", undefined, player, "GET")).status).toBe(401);
-    expect((await request("/api/auth/reset", { token, password: next, confirmPassword: next })).status).toBe(410);
-    expect((await app.request(legacyUrl, {}, env)).headers.get("location")).toContain("expired");
-    expect((await request("/api/auth/login", { username: "wing.one", password })).status).toBe(401);
-    expect((await request("/api/auth/login", { username: "wing.one", password: next })).status).toBe(200);
-    const expired = await makeReset();
-    await env.DB.prepare("UPDATE password_resets SET expires_at=1").bind().run();
-    expect((await request("/api/auth/reset/options", { token: expired })).status).toBe(410);
-  });
-
-  it("allows admin recovery to establish credentials for a legacy player, but denies coaches", async () => {
-    const invite = await request("/api/share-invites", { label: "Recovery Wing", role: "player" }, admin);
-    const joined = await app.request((await invite.json() as { url: string }).url, { headers: { cookie: admin } }, env);
-    expect((await request("/api/me", undefined, admin, "GET")).status).toBe(200);
-    const player = cookie(joined);
-    const me = await (await request("/api/me", undefined, player, "GET")).json() as { user: { id: string } };
-    const coachInvite = await request("/api/share-invites", { label: "Assistant", role: "coach" }, admin);
-    const coach = cookie(await app.request((await coachInvite.json() as { url: string }).url, {}, env));
-    expect((await request("/api/password-resets", { userId: me.user.id }, coach)).status).toBe(403);
+  it("never grants staff access through player links or coach recovery", async () => {
+    const p = await player(), coach = await testMemberSession(env.DB, "Coach", "coach");
+    const staff = await (await request("/api/me", undefined, coach, "GET")).json() as { user: { id: string } };
+    expect((await request("/api/player-login-links", { userId: staff.user.id, action: "rotate" }, coach)).status).toBe(404);
+    expect((await request("/api/me/login-link", { action: "rotate" }, coach)).status).toBe(404);
+    expect((await request("/api/signin-links", { userId: staff.user.id }, p.auth)).status).toBe(403);
+    const adminMe = await (await request("/api/me", undefined, admin, "GET")).json() as { user: { id: string } };
+    expect((await request("/api/signin-links", { userId: adminMe.user.id }, coach)).status).toBe(403);
+    expect((await request("/api/player-login-links", { userId: p.id, action: "rotate" }, p.auth)).status).toBe(403);
     expect((await request("/api/registration", { action: "rotate" }, coach)).status).toBe(403);
-    const reset = await request("/api/password-resets", { userId: me.user.id }, admin);
-    const token = new URL((await reset.json() as { url: string }).url).hash.slice(7);
-    expect(await (await request("/api/auth/reset/options", { token })).json()).toEqual({ needsUsername: true });
-    expect((await request("/api/auth/reset", { token, password, confirmPassword: password })).status).toBe(400);
-    expect((await request("/api/auth/reset", { token, username: "recovered.wing", password, confirmPassword: password })).status).toBe(200);
-    expect((await request("/api/auth/login", { username: "recovered.wing", password })).status).toBe(200);
-    expect((await request("/api/signin-links", { userId: me.user.id }, coach)).status).toBe(403);
-    expect((await request("/api/signin-links", { userId: me.user.id }, admin)).status).toBe(201);
+    expect((await request(`/api/members/${p.membership}`, { role: "coach" }, admin, "PATCH")).status).toBe(200);
+    expect((await request("/api/auth/login", { token: p.token })).status).toBe(401);
+    expect((await request("/api/me", undefined, p.auth, "GET")).status).toBe(401);
   });
 
-  it("migrates a legacy player in place and keeps training data and credentials stable", async () => {
-    const invite = await request("/api/share-invites", { label: "Legacy Wing", role: "player" }, admin);
-    const joined = await app.request((await invite.json() as { url: string }).url, { headers: { cookie: admin } }, env);
-    expect((await request("/api/me", undefined, admin, "GET")).status).toBe(200);
-    let auth = cookie(joined);
-    await request("/api/onboarding", { rosterName: "Legacy Wing", positionId: "pos_fullback", injuryStatus: "available" }, auth);
-    const workouts = await (await request("/api/workouts", undefined, auth, "GET")).json() as { today: string };
-    expect((await request("/api/workouts", { type: "running", durationMin: 40, occurredOn: workouts.today, intensity: "moderate", clientRequestId: crypto.randomUUID() }, auth)).status).toBe(201);
-    const before = await (await request("/api/me", undefined, auth, "GET")).json();
-    const migrated = await request("/api/me/credentials", { username: "legacy.wing", password, confirmPassword: password }, auth);
-    expect(migrated.status).toBe(200);
-    expect((await request("/api/me", undefined, auth, "GET")).status).toBe(401);
-    auth = cookie(migrated);
-    expect(await (await request("/api/me", undefined, auth, "GET")).json()).toEqual(before);
-    const dash = await (await request("/api/dashboard", undefined, auth, "GET")).json() as { offseason: { pointsTenths: number } };
-    expect(dash.offseason.pointsTenths).toBe(60);
-    const badges = await (await request("/api/badges", undefined, auth, "GET")).json() as { badges: { key: string; awarded_at: number | null; progress: { current: number; target: number } }[] };
-    expect(badges.badges.find(b => b.key === "points_50")?.progress).toMatchObject({ current: 6, target: 50 });
-    expect(badges.badges.find(b => b.key === "first_session")?.awarded_at).toBeTruthy();
-    expect((await request("/api/me/credentials", { username: "hijack", password, confirmPassword: password }, auth)).status).toBe(409);
+  it("blocks cross-player workouts, profile changes, and account recovery", async () => {
+    const p = await player(), other = await player();
+    const created = await request("/api/workouts", { type: "running", durationMin: 40, clientRequestId: "owner-only-1111" }, p.auth);
+    const { workout } = await created.json() as { workout: { id: string } };
+    for (const method of ["PATCH", "DELETE"]) expect([403,404]).toContain((await request(`/api/workouts/${workout.id}`, method === "PATCH" ? { type: "running", durationMin: 20 } : undefined, other.auth, method)).status);
+    expect((await request(`/api/profiles/${p.profile}`, { rosterName: "Hacked" }, other.auth, "PATCH")).status).toBe(403);
+    expect((await request("/api/player-login-links", { userId: p.id, action: "revoke" }, other.auth)).status).toBe(403);
+    const own = await (await request("/api/workouts", undefined, other.auth, "GET")).json() as { workouts: unknown[] };
+    expect(own.workouts).toHaveLength(0);
+    const self = await request("/api/me/login-link", { action: "rotate", userId: p.id }, other.auth);
+    expect(self.status).toBe(201);
+    expect((await request("/api/auth/login", { token: p.token })).status).toBe(200);
+  });
+
+  it("allows an existing password or legacy link account to attach a new link without replacing its identity", async () => {
+    const auth = await testMemberSession(env.DB, "Existing Player");
+    const { user } = await (await request("/api/me", undefined, auth, "GET")).json() as { user: { id: string } };
+    await env.DB.prepare("INSERT INTO credentials(user_id,username,password_hash,password_updated_at,created_at,updated_at) VALUES(?,?,?,1,1,1)").bind(user.id,"legacy.player","scrypt$legacy-retained").run();
+    const result = await request("/api/me/login-link", { action: "rotate" }, auth); expect(result.status).toBe(201);
+    const next = await request("/api/auth/login", { token: tokenOf((await result.json() as { url: string }).url) });
+    expect((await (await request("/api/me", undefined, cookie(next), "GET")).json() as { user: { id: string } }).user.id).toBe(user.id);
+    expect((await request("/api/auth/login", { username: "legacy.player", password: "anything" })).status).toBe(401);
+    expect((await request("/api/auth/reset", { token: randomToken(), password: "anything" })).status).toBe(404);
+  });
+
+  it("enforces registration disable, rotation, expiry, input validation, and signed-in duplicate prevention", async () => {
+    const token = await teamLink();
+    expect((await register(token, { groupId: "group_forwards" })).status).toBe(400);
+    expect((await register(token, { fullName: "<script>" })).status).toBe(400);
+    const r = await register(token);
+    expect((await request("/api/auth/register", { token }, cookie(r))).status).toBe(409);
+    await request("/api/registration", { enabled: false }, admin); expect((await register(token)).status).toBe(410);
+    await request("/api/registration", { enabled: true }, admin); expect((await request("/api/registration/options", { token })).status).toBe(200);
+    const next = await teamLink(); expect((await register(token)).status).toBe(410);
+    await env.DB.prepare("UPDATE team_registration SET expires_at=1").bind().run(); expect((await register(next)).status).toBe(410);
+    expect((await request("/api/me", undefined, cookie(r), "GET")).status).toBe(200);
+  });
+
+  it("revokes links on deactivation and never revives them on reactivation", async () => {
+    const p = await player();
+    await request(`/api/members/${p.membership}`, { status: "deactivated" }, admin, "PATCH");
+    expect((await request("/api/me", undefined, p.auth, "GET")).status).toBe(401);
+    await request(`/api/members/${p.membership}`, { status: "active" }, admin, "PATCH");
+    expect((await request("/api/auth/login", { token: p.token })).status).toBe(401);
+  });
+
+  it("rechecks a login token inside session insertion when revocation races a verified login", async () => {
+    const p = await player(), db = env.DB;
+    const batch = db.batch.bind(db);
+    let revoke = true;
+    vi.spyOn(db, "batch").mockImplementation(async statements => {
+      if (revoke) { revoke = false; await db.prepare("DELETE FROM player_login_links WHERE user_id=?").bind(p.id).run(); }
+      return batch(statements);
+    });
+    const response = await request("/api/auth/login", { token: p.token });
+    expect(response.status).toBe(401); expect(response.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("has generic login failures, bounded bodies, CSRF checks, hashed throttles and Retry-After", async () => {
+    const p = await player();
+    const first = await request("/api/auth/login", { token: randomToken() });
+    expect(first.status).toBe(401);
+    expect(await (await request("/api/auth/login", { token: "invalid" })).json()).toEqual(await first.json());
+    expect((await request("/api/auth/login", { token: p.token }, "", "POST", { origin: "https://evil.test" })).status).toBe(403);
+    expect((await request("/api/auth/login", { token: "x".repeat(9000) })).status).toBe(413);
+    for (let i=0;i<60;i++) expect((await request("/api/auth/login", { token: randomToken() }, "", "POST", { "cf-connecting-ip": "192.0.2.4" })).status).toBe(401);
+    const blocked = await request("/api/auth/login", { token: p.token }, "", "POST", { "cf-connecting-ip": "192.0.2.4" });
+    expect(blocked.status).toBe(429); expect(Number(blocked.headers.get("retry-after"))).toBeGreaterThan(0);
+    const rows = await env.DB.prepare("SELECT bucket FROM auth_limits").bind().all(); expect(JSON.stringify(rows.results)).not.toContain("192.0.2.4");
   });
 });

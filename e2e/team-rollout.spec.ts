@@ -3,10 +3,9 @@ import { expect, test } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { invitePlayer, useAdmin } from "./account";
 
-const password = "Test rugby training passphrase";
 test.use({ serviceWorkers: "block", viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true });
 
-test("shared registration, password login/recovery, training and mobile refinements", async ({ page, browserName }) => {
+test("shared registration, personal link login/recovery, training and mobile refinements", async ({ page, browserName }) => {
   await useAdmin(page);
   await page.goto("/registration");
   await page.getByRole("button", { name: "Create registration link", exact: true }).click();
@@ -19,9 +18,6 @@ test("shared registration, password login/recovery, training and mobile refineme
   await expect(page.getByLabel("Full name")).toBeVisible();
   await expect.poll(() => page.url()).toMatch(/\/join$/);
   await page.getByLabel("Full name").fill("Rollout Wing");
-  await page.getByLabel("Username", { exact: true }).fill("rollout.wing");
-  await page.getByLabel("Password (12–128 characters)", { exact: true }).fill(password);
-  await page.getByLabel("Confirm password", { exact: true }).fill(password);
   await page.getByLabel("Playing group").selectOption({ label: "Backs" });
   await page.getByLabel("Rugby position").selectOption({ label: "Fullback" });
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
@@ -29,6 +25,8 @@ test("shared registration, password login/recovery, training and mobile refineme
   await mkdir(shots, { recursive: true });
   await page.screenshot({ path: `${shots}/registration.png`, fullPage: true, animations: "disabled" });
   await page.getByRole("button", { name: "Create player account" }).click();
+  const personal = await page.getByLabel("Personal login link").inputValue();
+  await page.getByRole("link", { name: "Continue to dashboard" }).click();
   await expect(page.getByRole("heading", { name: "Rollout Wing" })).toBeVisible();
 
   await page.getByRole("link", { name: "Log", exact: true }).click();
@@ -100,34 +98,30 @@ test("shared registration, password login/recovery, training and mobile refineme
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.screenshot({ path: `${shots}/profile.png`, fullPage: true, animations: "disabled" });
   const me = await (await page.request.get("/api/me")).json() as { user: { id: string } };
-  expect((await page.request.post("/api/password-resets", { data: { userId: me.user.id } })).status()).toBe(403);
+  expect((await page.request.post("/api/player-login-links", { data: { userId: me.user.id, action: "rotate" } })).status()).toBe(403);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
-  await page.getByLabel("Username", { exact: true }).fill("rollout.wing");
-  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.goto(personal);
+  await expect.poll(() => page.url()).toMatch(/\/player-login$/);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Rollout Wing" })).toBeVisible();
   await page.reload();
   await expect(page.getByRole("heading", { name: "Rollout Wing" })).toBeVisible();
 
   await useAdmin(page);
-  const response = await page.request.post("/api/password-resets", { data: { userId: me.user.id } });
-  expect(response.ok()).toBe(true);
-  const reset = await response.json() as { url: string };
+  await page.goto("/members");
+  await page.getByRole("button", { name: "Replace login link for Rollout Wing", exact: true }).click();
+  const replacement = await page.getByLabel("Replacement personal login link").inputValue();
   await page.context().clearCookies();
-  await page.goto(reset.url);
-  await expect(page.getByRole("heading", { name: "Choose a new password" })).toBeVisible();
-  await page.getByLabel("Password (12–128 characters)", { exact: true }).fill(password + " updated");
-  await page.getByLabel("Confirm password", { exact: true }).fill(password + " updated");
-  await page.getByRole("button", { name: "Reset password", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("Password updated");
-  await page.getByRole("link", { name: "Go to sign in", exact: true }).click();
-  await page.getByLabel("Username", { exact: true }).fill("rollout.wing");
-  await page.getByLabel("Password", { exact: true }).fill(password + " updated");
+  await page.goto(personal);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("invalid or revoked");
+  await page.goto(replacement);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByLabel("Weekly performance")).toContainText("6.0");
+
 });
 
-test("legacy player establishes credentials without losing their profile", async ({ page }) => {
+test("legacy player saves a personal link without losing their profile", async ({ page }) => {
   await useAdmin(page);
   const url = await invitePlayer(page, "Legacy Rollout");
   await page.goto(url);
@@ -135,14 +129,10 @@ test("legacy player establishes credentials without losing their profile", async
   await page.getByLabel("Position").selectOption({ label: "Fullback" });
   await page.getByRole("button", { name: "Save profile" }).click();
   await page.getByRole("link", { name: "You", exact: true }).click();
-  await page.getByLabel("Username", { exact: true }).fill("legacy.rollout");
-  await page.getByLabel("Password (12–128 characters)", { exact: true }).fill(password);
-  await page.getByLabel("Confirm password", { exact: true }).fill(password);
-  await page.getByRole("button", { name: "Set up username & password" }).click();
-  await expect(page.getByText("@legacy.rollout")).toBeVisible();
+  await page.getByRole("button", { name: "Create personal login link", exact: true }).click();
+  const personal = await page.getByLabel("Personal login link").inputValue();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
-  await page.getByLabel("Username", { exact: true }).fill("legacy.rollout");
-  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.goto(personal);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Legacy Rollout" })).toBeVisible();
 });

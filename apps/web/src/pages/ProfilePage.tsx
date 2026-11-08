@@ -129,7 +129,7 @@ export function ProfilePage() {
           </button>
         </section>
       ) : null}
-      <section className="flex flex-col gap-s2 rounded-md border border-line bg-raised p-s2">
+      {me?.membership.role !== "player" ? <section className="flex flex-col gap-s2 rounded-md border border-line bg-raised p-s2">
         <h2 className="font-heading font-semibold">Another device</h2>
         <p className="text-sm text-quiet">This link works once and expires in 15 minutes. Scan the code or copy it onto the other device.</p>
         <button
@@ -140,7 +140,7 @@ export function ProfilePage() {
           Create a sign-in link
         </button>
         {deviceUrl ? <ShareLink url={deviceUrl} label="Device sign-in link" /> : null}
-      </section>
+      </section> : null}
       <button type="button" onClick={() => void logout()} className="w-fit text-quiet underline">
         Sign out
       </button>

@@ -16,9 +16,7 @@ interface Actor {
   role: string;
 }
 
-export function emailEnabled(env: Env): boolean {
-  return env.EMAIL_PROVIDER === "console" || env.EMAIL_PROVIDER === "cloudflare";
-}
+export function emailEnabled(_env: Env): boolean { return false; }
 
 export function registerLinkRoutes(
   app: Hono<AppEnv>,
@@ -145,15 +143,13 @@ export function registerLinkRoutes(
       return c.json({ error: "Coaches only." }, 403);
     }
     const member = await c.env.DB.prepare(
-      `SELECT u.id, u.name FROM users u
+      `SELECT u.id, u.name, m.role FROM users u
        JOIN club_memberships m ON m.user_id = u.id
        WHERE u.id = ? AND m.club_id = ? AND m.status = 'active' AND u.status != 'disabled'`,
-    ).bind(requested, CLUB_ID).first<{ id: string; name: string }>();
+    ).bind(requested, CLUB_ID).first<{ id: string; name: string; role: string }>();
     if (!member) return c.json({ error: "Member not found." }, 404);
-    if (requested !== session.user_id && session.role !== "admin") {
-      const credentials = await c.env.DB.prepare("SELECT username FROM credentials WHERE user_id=?").bind(requested).first<{ username: string | null }>();
-      if (credentials?.username) return c.json({ error: "Ask an administrator to reset this player's password." }, 403);
-    }
+    if (requested !== session.user_id && member.role !== "player" && session.role !== "admin") return c.json({ error: "Admins only for staff access." }, 403);
+    if (member.role === "player") return c.json({ error: "Use the player login link controls to recover player access." }, 409);
     const created = await insertLink(c, {
       kind: "signin",
       role: null,

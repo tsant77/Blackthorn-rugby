@@ -50,9 +50,9 @@ npm run dev --workspace @blackthorn/web
 | Criterion | Status |
 | --- | --- |
 | Shell with bottom nav, desktop layout, error boundary, loading and empty states | Done |
-| Magic-link sessions, no passwords | Done |
+| Personal player login links and persistent sessions, no passwords | Done |
 | Admin invitations and player onboarding onto a seeded XV | Done |
-| Console email provider and Cloudflare Email Service provider | Done |
+| Email-free registration and coach/admin-assisted link recovery | Done |
 | Integration tests and Playwright invite → link → onboarding | Done |
 | Mobile and desktop screenshots | `docs/screenshots/phase-2` |
 
@@ -105,3 +105,5 @@ Owner decisions are in `docs/DECISIONS.md`.
 ## Not in this phase
 
 The service worker and any deploy. See `docs/DEPLOYMENT.md`.
+
+Authentication and the approval-gated development rollout are documented in [Team rollout](docs/TEAM_ROLLOUT.md). The actual development Worker 10 ms CPU benchmark is pending deployment approval.

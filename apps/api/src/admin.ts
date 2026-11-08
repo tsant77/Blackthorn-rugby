@@ -1,8 +1,6 @@
 import type { Context, Hono } from "hono";
 import { clubCatalog } from "@blackthorn/db/catalog";
 import { isRealCivilDate } from "@blackthorn/scoring";
-import { renderMagicLink } from "./email";
-import { randomToken, sha256Hex } from "./tokens";
 import type { Env } from "./app";
 import { scoringContext } from "./workouts";
 import { syncBadges } from "./badges";
@@ -101,7 +99,7 @@ export function registerAdminRoutes(
     const session = await requireStaff(c, currentSession);
     if (session instanceof Response) return session;
     const members = await c.env.DB.prepare(
-      `SELECT m.id AS membership_id, m.role, m.status, u.id AS user_id, u.email, u.name, u.status AS user_status,
+      `SELECT m.id AS membership_id, m.role, m.status, u.id AS user_id, '' AS email, u.name, u.status AS user_status,
               pr.id AS profile_id, pr.roster_name, pr.position_id, pr.group_id, pr.injury_status, pr.injury_note,
               pos.name AS position_name, g.name AS group_name
        FROM club_memberships m
@@ -110,30 +108,15 @@ export function registerAdminRoutes(
        LEFT JOIN positions pos ON pos.id = pr.position_id
        LEFT JOIN groups g ON g.id = pr.group_id
        WHERE m.club_id = ?
-       ORDER BY m.status, u.email`,
+       ORDER BY m.status, u.name`,
     ).bind(CLUB_ID).all();
-    const invites = await c.env.DB.prepare(
-      `SELECT id, email, role, expires_at, accepted_at, created_at
-       FROM invitations WHERE club_id = ? ORDER BY created_at DESC LIMIT 50`,
-    ).bind(CLUB_ID).all();
-    return c.json({ members: members.results, invitations: invites.results });
+    return c.json({ members: members.results, invitations: [] });
   });
 
   app.post("/api/invitations/:id/resend", async (c) => {
     const session = await requireAdmin(c, currentSession);
     if (session instanceof Response) return session;
-    const invite = await c.env.DB.prepare(
-      "SELECT id, email, role, accepted_at FROM invitations WHERE id = ? AND club_id = ?",
-    ).bind(c.req.param("id"), CLUB_ID).first<{ id: string; email: string; role: string; accepted_at: number | null }>();
-    if (!invite || invite.accepted_at) return c.json({ error: "Invite not found." }, 404);
-    const now = Date.now();
-    const token = randomToken();
-    await c.env.DB.prepare(
-      "UPDATE invitations SET token_hash = ?, expires_at = ? WHERE id = ?",
-    ).bind(await sha256Hex(token), now + 7 * 24 * 60 * 60 * 1000, invite.id).run();
-    await sendInvite(c.env, invite.email, token);
-    await runAudit(c.env.DB, session.user_id, "invite_resent", "invitation", invite.id, null, { email: invite.email }, now);
-    return c.json({ ok: true });
+    return c.json({ error: "Email invitations are no longer available. Create a new invitation link." }, 410);
   });
 
   app.post("/api/invitations/:id/revoke", async (c) => {
@@ -182,10 +165,12 @@ export function registerAdminRoutes(
     await c.env.DB.batch([
       c.env.DB.prepare("UPDATE club_memberships SET role=?,status=?,updated_at=? WHERE id=?")
         .bind(nextRole, nextStatus, now, member.id),
-      ...(nextStatus === "deactivated" ? [
+      ...(nextStatus === "deactivated" || nextRole !== member.role ? [
+        c.env.DB.prepare("DELETE FROM player_login_links WHERE user_id=?").bind(member.user_id),
         c.env.DB.prepare("UPDATE sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL").bind(now, member.user_id),
         c.env.DB.prepare("UPDATE access_links SET enabled=0 WHERE user_id=? AND kind='signin'").bind(member.user_id),
         c.env.DB.prepare("UPDATE password_resets SET consumed_at=? WHERE user_id=? AND consumed_at IS NULL").bind(now, member.user_id),
+        c.env.DB.prepare("UPDATE magic_links SET consumed_at=? WHERE email=(SELECT email FROM users WHERE id=?) AND consumed_at IS NULL").bind(now, member.user_id),
       ] : []),
     ]);
     await runAudit(c.env.DB, session.user_id, "member_updated", "club_membership", member.id, member, { role: nextRole, status: nextStatus }, now);
@@ -449,20 +434,6 @@ function audit(db: D1Database, userId: string, action: string, entityId: string,
     `INSERT INTO audit_events (id, club_id, actor_user_id, action, entity_type, entity_id, before_json, after_json, created_at)
      VALUES (?, ?, ?, ?, 'workout', ?, ?, ?, ?)`,
   ).bind(crypto.randomUUID(), CLUB_ID, userId, action, entityId, before ? JSON.stringify(before) : null, JSON.stringify(after), now);
-}
-
-async function sendInvite(env: Env, email: string, token: string) {
-  const origin = env.APP_ORIGIN?.replace(/\/$/, "");
-  if (!origin || env.EMAIL_PROVIDER !== "console") {
-    if (!env.EMAIL || !env.EMAIL_FROM || !origin) throw new Error("Email is not configured.");
-    const message = renderMagicLink({ origin, path: "/auth/invite", token, kind: "invite" });
-    await env.EMAIL.send({ to: email, from: { email: env.EMAIL_FROM, name: "Blackthorn Rugby" }, subject: message.subject, text: message.text, html: message.html });
-    return;
-  }
-  const message = renderMagicLink({ origin, path: "/auth/invite", token, kind: "invite" });
-  await env.DB.prepare(
-    "INSERT INTO dev_mailbox (id, to_address, subject, text_body, created_at) VALUES (?, ?, ?, ?, ?)",
-  ).bind(crypto.randomUUID(), email, message.subject, message.text, Date.now()).run();
 }
 
 async function readJson(c: AppContext): Promise<Record<string, unknown> | null> {

@@ -27,10 +27,8 @@ binding = "ASSETS"
 not_found_handling = "single-page-application"
 run_worker_first = [ "/api/*", "/auth/*", "/health", "/link", "/link/*" ]
 
-# Optional email. Launch uses EMAIL_PROVIDER=none, so this binding is idle.
-# Do not set remote = true. That would send real mail from local development.
-[[send_email]]
-name = "EMAIL"
+[vars]
+EMAIL_PROVIDER = "none"
 
 # Photos are out of scope this offseason. Do not add an R2 binding.
 
@@ -62,8 +60,9 @@ database_name = "blackthorn-rugby-dev"
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "../../packages/db/migrations"
 
-[[env.dev.send_email]]
-name = "EMAIL"
+[env.dev.vars]
+EMAIL_PROVIDER = "none"
+APP_ORIGIN = "https://blackthorn-rugby-dev.blackthorn-rugby.workers.dev"
 
 [env.dev.triggers]
 crons = ["0 12 * * *"]

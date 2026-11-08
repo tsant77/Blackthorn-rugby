@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import app, { type Env } from "./app";
-import { openTestDatabase } from "./test-db";
+import { openTestDatabase, testMemberSession } from "./test-db";
 
 describe("coach admin tools", () => {
   let env: Env;
@@ -13,22 +13,10 @@ describe("coach admin tools", () => {
   beforeAll(async () => {
     env = {
       DB: openTestDatabase(),
-      EMAIL_PROVIDER: "console",
+      EMAIL_PROVIDER: "none",
       APP_ORIGIN: "http://localhost",
-      BOOTSTRAP_ADMIN_EMAIL: "coach@blackthorn.test",
-      EMAIL_FROM: "noreply@blackthorn.test",
     };
     admin = await signIn("coach@blackthorn.test");
-    await app.request("http://localhost/api/invitations", {
-      method: "POST",
-      headers: { "content-type": "application/json", cookie: admin },
-      body: JSON.stringify({ email: "wing@blackthorn.test", role: "player" }),
-    }, env);
-    await app.request("http://localhost/api/invitations", {
-      method: "POST",
-      headers: { "content-type": "application/json", cookie: admin },
-      body: JSON.stringify({ email: "assistant@blackthorn.test", role: "coach" }),
-    }, env);
     coach = await accept("assistant@blackthorn.test");
     player = await accept("wing@blackthorn.test");
     const options = await json<{ positions: { id: string; name: string }[] }>("/api/roster-options", player);
@@ -199,21 +187,11 @@ describe("coach admin tools", () => {
     return response.json() as Promise<T>;
   }
 
-  async function signIn(email: string): Promise<string> {
-    await app.request("http://localhost/api/auth/request", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.77" },
-      body: JSON.stringify({ email }),
-    }, env);
-    return accept(email);
+  async function signIn(label: string): Promise<string> {
+    return testMemberSession(env.DB, label, "admin");
   }
 
-  async function accept(email: string): Promise<string> {
-    const mailbox = await app.request(`http://localhost/api/dev/mailbox?to=${encodeURIComponent(email)}`, {}, env);
-    const body = await mailbox.json() as { messages: { text_body: string }[] };
-    const link = body.messages[0]?.text_body.match(/http:\/\/localhost\S+/)?.[0];
-    if (!link) throw new Error(`No link for ${email}`);
-    const verified = await app.request(link, {}, env);
-    return verified.headers.get("set-cookie")?.split(";")[0] ?? "";
+  async function accept(label: string): Promise<string> {
+    return testMemberSession(env.DB, label, label.startsWith("assistant") ? "coach" : "player");
   }
 });

@@ -1,6 +1,5 @@
 import { clubCatalog } from "@blackthorn/db/catalog";
 import type { Env } from "./app";
-import { cloudflareEmailProvider, consoleEmailProvider, type EmailProvider } from "./email";
 
 const CLUB_ID = clubCatalog.id;
 
@@ -24,10 +23,6 @@ export async function notifyUser(env: Env, input: {
     `INSERT INTO notifications (id, club_id, user_id, kind, title, body, dedupe_key, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(crypto.randomUUID(), CLUB_ID, input.userId, input.kind, input.title, input.body, input.dedupeKey, input.now).run();
-  if (input.emailOptIn) {
-    const provider = providerFor(env);
-    if (provider) await sendQuietly(provider, input.email, input.title, input.body);
-  }
   return true;
 }
 
@@ -74,23 +69,4 @@ export async function notifyReview(env: Env, workoutId: string, action: "reject"
 
 export function optedIn(value: number | boolean | null): boolean {
   return value === 1 || value === true;
-}
-
-function providerFor(env: Env): EmailProvider | null {
-  if (!env.EMAIL_PROVIDER || env.EMAIL_PROVIDER === "none") return null;
-  if (env.EMAIL_PROVIDER === "console") return consoleEmailProvider(env.DB);
-  if (!env.EMAIL || !env.EMAIL_FROM) return null;
-  return cloudflareEmailProvider(env.EMAIL, env.EMAIL_FROM);
-}
-
-async function sendQuietly(provider: EmailProvider, to: string, subject: string, body: string): Promise<void> {
-  try {
-    await provider.send({ to, subject, text: body, html: `<p>${escapeHtml(body)}</p>` });
-  } catch (error) {
-    console.log(JSON.stringify({ event: "email_failed", message: error instanceof Error ? error.message : "send failed" }));
-  }
-}
-
-function escapeHtml(value: string): string {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }

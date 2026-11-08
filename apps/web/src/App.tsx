@@ -1,4 +1,5 @@
 import { RouteFocus } from "./components/RouteFocus";
+import { PlayerLoginPage } from "./pages/PlayerLoginPage";
 import { AccountAccessPage } from "./pages/AccountAccessPage";
 import { RegistrationAdminPage } from "./pages/RegistrationAdminPage";
 import type { ReactNode } from "react";
@@ -33,7 +34,8 @@ export function App() {
         <Routes>
           <Route path="/login" element={<GuestOnly><LoginPage /></GuestOnly>} />
           <Route path="/join" element={<AccountAccessPage />} />
-          <Route path="/reset-password" element={<AccountAccessPage reset />} />
+          <Route path="/player-login" element={<PlayerLoginPage />} />
+          <Route path="/reset-password" element={<Navigate to="/login" replace />} />
           <Route path="/setup" element={<SetupPage />} />
           <Route path="/design" element={<DesignPage />} />
           <Route element={<RequireSession />}>
