@@ -33,7 +33,10 @@ describe("D1 migration", () => {
     expect(sql).toMatch(/audit_events_no_delete/i);
   });
 
-  it("does not seed a roster", () => {
-    expect(sql.toLowerCase()).not.toContain("insert into");
+  it("seeds club config and does not seed people", () => {
+    const lowered = sql.toLowerCase();
+    expect(lowered).toContain("blackthorn rugby club");
+    expect(lowered).toContain("loosehead prop");
+    expect(lowered).not.toMatch(/insert into [`"]?(users|player_profiles|workouts|credentials)[`"]?/);
   });
 });

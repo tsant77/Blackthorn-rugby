@@ -35,6 +35,7 @@ export const users = sqliteTable("users", {
   check("users_status_chk", sql`${table.status} IN ('invited', 'active', 'disabled')`),
 ]);
 
+/** Unused. Access is magic-link only; this table is not written. */
 export const credentials = sqliteTable("credentials", {
   userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "restrict" }),
   passwordHash: text("password_hash"),
@@ -54,6 +55,29 @@ export const sessions = sqliteTable("sessions", {
 }, (table) => [
   uniqueIndex("sessions_token_hash_unique").on(table.tokenHash),
   index("sessions_user_idx").on(table.userId),
+]);
+
+export const magicLinks = sqliteTable("magic_links", {
+  id: text("id").primaryKey(),
+  email: text("email").notNull(),
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+  consumedAt: integer("consumed_at", { mode: "timestamp_ms" }),
+  createdAt: createdAt(),
+}, (table) => [
+  uniqueIndex("magic_links_token_hash_unique").on(table.tokenHash),
+  index("magic_links_email_idx").on(table.email, table.createdAt),
+]);
+
+/** Local/dev only. The console email provider writes bodies here so tests can read magic links. */
+export const devMailbox = sqliteTable("dev_mailbox", {
+  id: text("id").primaryKey(),
+  toAddress: text("to_address").notNull(),
+  subject: text("subject").notNull(),
+  textBody: text("text_body").notNull(),
+  createdAt: createdAt(),
+}, (table) => [
+  index("dev_mailbox_to_idx").on(table.toAddress, table.createdAt),
 ]);
 
 export const loginAttempts = sqliteTable("login_attempts", {
@@ -95,17 +119,6 @@ export const clubMemberships = sqliteTable("club_memberships", {
   check("club_memberships_status_chk", sql`${table.status} IN ('active', 'deactivated')`),
 ]);
 
-export const positions = sqliteTable("positions", {
-  id: text("id").primaryKey(),
-  clubId: text("club_id").notNull().references(() => clubs.id, { onDelete: "restrict" }),
-  name: text("name").notNull(),
-  sortOrder: integer("sort_order").notNull(),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-}, (table) => [
-  uniqueIndex("positions_club_name_unique").on(table.clubId, table.name),
-]);
-
 export const groups = sqliteTable("groups", {
   id: text("id").primaryKey(),
   clubId: text("club_id").notNull().references(() => clubs.id, { onDelete: "restrict" }),
@@ -117,6 +130,19 @@ export const groups = sqliteTable("groups", {
 }, (table) => [
   uniqueIndex("groups_club_name_unique").on(table.clubId, table.name),
   check("groups_kind_chk", sql`${table.kind} IN ('position_group', 'training_group')`),
+]);
+
+export const positions = sqliteTable("positions", {
+  id: text("id").primaryKey(),
+  clubId: text("club_id").notNull().references(() => clubs.id, { onDelete: "restrict" }),
+  groupId: text("group_id").references(() => groups.id, { onDelete: "restrict" }),
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (table) => [
+  uniqueIndex("positions_club_name_unique").on(table.clubId, table.name),
+  index("positions_group_idx").on(table.groupId),
 ]);
 
 export const playerProfiles = sqliteTable("player_profiles", {
@@ -347,6 +373,8 @@ export const schemaTables = [
   credentials,
   sessions,
   loginAttempts,
+  magicLinks,
+  devMailbox,
   invitations,
   clubMemberships,
   positions,

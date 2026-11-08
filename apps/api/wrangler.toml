@@ -18,7 +18,16 @@ database_name = "blackthorn-rugby"
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "../../packages/db/migrations"
 
-# R2 is optional and stays off until uploads are in scope.
-# [[r2_buckets]]
-# binding = "MEDIA"
-# bucket_name = "blackthorn-rugby-media"
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = [ "/api/*", "/auth/*", "/health" ]
+
+# Production email. Leave EMAIL_PROVIDER unset (or set it to cloudflare) after the
+# sending domain is onboarded. Do not set remote = true here; that would send real
+# mail from local development. Local tests use EMAIL_PROVIDER=console instead.
+[[send_email]]
+name = "EMAIL"
+
+# Photos are out of scope this offseason. Do not add an R2 binding.

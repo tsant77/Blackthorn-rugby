@@ -17,6 +17,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
 
   # Deploy is intentionally absent. The club owner deploys from their own
   # Cloudflare account. Do not add account ids or secrets to this workflow.

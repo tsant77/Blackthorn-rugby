@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "e2e:server": "wrangler d1 migrations apply blackthorn-rugby --local --persist-to .wrangler/e2e && wrangler dev --port 8787 --persist-to .wrangler/e2e --show-interactive-dev-session=false --var EMAIL_PROVIDER:console --var APP_ORIGIN:http://127.0.0.1:8787 --var BOOTSTRAP_ADMIN_EMAIL:coach@blackthorn.test --var EMAIL_FROM:noreply@blackthorn.test",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "@blackthorn/db": "*",
     "hono": "^4.13.17"
   },
   "devDependencies": {

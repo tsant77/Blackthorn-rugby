@@ -1,6 +1,6 @@
 # Product requirements
 
-Status: Phase 1 of 7. This document is the product spec. Login, workout logging, leaderboards, and admin tools are specified here and built in later phases.
+Status: Phase 2 of 7. Owner decisions are in `docs/DECISIONS.md`. Workout logging is still later.
 
 Product: Rugby Offseason Performance Platform for Blackthorn Rugby Club (Horsham, PA).
 
@@ -25,7 +25,7 @@ The schema is multi-club. Version 1 is operated as one club. Youth and senior si
 | Phase | Outcome | In this repository now |
 | --- | --- | --- |
 | 1 | Requirements, schema, scoring spec and engine, design system | This phase |
-| 2 | App shell, invitation auth, onboarding | Not started |
+| 2 | App shell, invitation auth, onboarding | This phase |
 | 3 | Workout logging wired to the scoring engine | Engine only |
 | 4 | Dashboard, leaderboards, analytics | Not started |
 | 5 | Coach and admin tools, export, moderation | Not started |
@@ -54,7 +54,7 @@ Identifiers are stable. The phase column is when the behavior is implemented, no
 | FR-14 | In-app notifications exist for invites, review decisions, and achievements. | 6 |
 | FR-15 | Every admin change writes an audit event. The audit log is append-only. | 5 |
 | FR-16 | Every query is scoped by the caller's club membership. Clients do not choose the club id. | 2 onward |
-| FR-17 | Optional photos or avatars go to R2. The database stores the object key, not a public URL. | 6 |
+| FR-17 | Photos are out of scope this offseason. The media table stays unused and R2 is not bound. | Deferred |
 
 ## Authorization
 

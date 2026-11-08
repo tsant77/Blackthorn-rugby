@@ -1,0 +1,8 @@
+# Copy to .dev.vars for local wrangler dev. .dev.vars is gitignored.
+# Never commit real addresses if you do not want them in a shell history,
+# and never set EMAIL_PROVIDER=console on the deployed worker.
+
+EMAIL_PROVIDER=console
+APP_ORIGIN=http://127.0.0.1:8787
+EMAIL_FROM=noreply@example.com
+BOOTSTRAP_ADMIN_EMAIL=you@example.com

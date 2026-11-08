@@ -20,7 +20,7 @@ Only one version per club MAY be `active` (partial unique index).
 
 Sessions store the `rule_version_id` they were judged under. Changing the active version MUST NOT rewrite old ledger rows. An admin recompute, later, posts reversals and new awards. It does not update history in place.
 
-`defaultRule()` is the recommended version 1. It is not inserted by the migration, because a club row does not exist yet. The admin UI publishes it.
+`defaultRule()` is version 1. The club seed inserts it as the active rule. The owner confirmed the caps on 8 November 2026: 15 points per session, 30 per day, 600 weighted minutes per 7 days.
 
 ## Formula
 
@@ -64,7 +64,7 @@ Worked examples at moderate intensity:
 | 1 min running | 0.2 |
 | 240 min running | 36.0 before caps |
 
-Distance MUST NOT add points in version 1. It exists to reject impossible sessions and to feed later analytics. A plausible 8 km run scores the same as the same duration with no distance.
+Distance MUST NOT add points in version 1. It exists to reject impossible sessions and to feed later analytics. A plausible 8 km run scores the same as the same duration with no distance. The product shows distance in miles (`metersToMiles` / `milesToMeters`). Storage stays in meters.
 
 ## Caps and the ledger
 
@@ -103,6 +103,8 @@ Checked in this order:
 1. Same `clientRequestId` on a non-voided session: outcome `duplicate`, no new ledger rows. The API should return the original session. A voided session MAY be resubmitted with the same id.
 2. Real time overlap with a counted session: `overlapping_session`. Touching endpoints (one ends when the next starts) are not an overlap. If only a start is present, the end is start plus duration.
 3. Heuristic duplicate: same player, type, civil date, and duration, and either both sessions have no start time, or both starts fall within `duplicateStartWindowMin` (default 15). Outcome `reject` / `duplicate_submission`.
+
+The owner left the same-day question open. The rule in force is the one above: different start times more than 15 minutes apart both count. Identical logs with no start time do not.
 
 Known hole: a session with a start time is not treated as a heuristic duplicate of a same-day session that has no start time. Overlap still applies when the timed session can be placed. Players who train twice in a day should send start times.
 

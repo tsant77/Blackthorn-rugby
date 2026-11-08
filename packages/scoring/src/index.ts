@@ -1,4 +1,5 @@
 export { addDays, civilDateInTimeZone, isRealCivilDate } from "./dates";
+export { METERS_PER_MILE, metersToMiles, milesToMeters } from "./distance";
 export { defaultRule } from "./defaults";
 export {
   formatPoints,

@@ -34,7 +34,11 @@ The club site is a sage Wix page with a gold-and-green crest. The product brief 
 
 ## Auth, files, and jobs
 
-Phase 2 owns sessions. The tables are `invitations` (token hash), `credentials` (nullable password hash, algorithm not chosen), and `sessions` (token hash). No login route exists yet.
+Sign-in is a magic link. `magic_links` and `invitations` store only a SHA-256 of the token. The session cookie is HttpOnly and holds a random token; the database stores its hash. `credentials` is unused. There are no passwords.
+
+Mail goes through an `EmailProvider`. `console` writes the body to `dev_mailbox` for local tests. `cloudflare` calls the Workers `EMAIL` binding (`SendEmail.send`). Production must onboard a sending domain and set `EMAIL_FROM`. See `docs/DEPLOYMENT.md`.
+
+R2 stays unbound this offseason.
 
 R2 is in the data model (`media_objects`) and commented out of `wrangler.toml` so a deploy does not create a bucket by surprise.
 

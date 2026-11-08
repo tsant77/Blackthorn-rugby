@@ -30,17 +30,32 @@ Confirm the migration list:
 npx wrangler d1 migrations list blackthorn-rugby --remote
 ```
 
-## Secrets
+## Secrets and email
 
-Phase 1 reads no secrets. When Phase 2 adds sessions, put secrets with Wrangler, not in git:
+There is no password and no shared team code. Copy `apps/api/.dev.vars.example` to `apps/api/.dev.vars` for local development. That file is gitignored.
+
+Production secrets and vars, from `apps/api`:
 
 ```bash
-npx wrangler secret put SESSION_SECRET
+npx wrangler secret put BOOTSTRAP_ADMIN_EMAIL
 ```
 
-Do not pass the secret value as a shell argument that lands in history. Wrangler prompts, or you can pipe it on stdin. Local development uses `apps/api/.dev.vars`, which is gitignored.
+Set these as Wrangler vars (they are not secret, but they are environment-specific):
 
-There is no `ADMIN_PASSWORD` or shared team code in this design. Access is by invitation.
+- `APP_ORIGIN` — public https origin, no trailing slash. Magic links are built from it.
+- `EMAIL_FROM` — address on a domain onboarded to Cloudflare Email Service, for example `noreply@blackthornrugbyclub.com`.
+- `EMAIL_PROVIDER` — omit it, or set `cloudflare`. Do not set `console` on the deployed worker. `console` stores message bodies in `dev_mailbox` and exposes `GET /api/dev/mailbox` so local tests can read links.
+
+Email setup the owner must do once:
+
+1. Onboard the sending domain in Cloudflare Email Service (SPF and DKIM). The Workers binding is `EMAIL` (`send_email` in `wrangler.toml`).
+2. Set `EMAIL_FROM` to an address on that domain.
+3. Set `BOOTSTRAP_ADMIN_EMAIL` to the first admin. Request a magic link for that address before anyone else is an admin. Later requests for that address are ordinary sign-ins.
+4. Leave `remote` off the email binding in config. Turning on remote bindings during `wrangler dev` sends real mail.
+
+Local `wrangler dev` with `EMAIL_PROVIDER=console` does not send mail. It logs a subject line and stores the body in D1 for the dev mailbox route.
+
+Photos are out of scope. There is no R2 binding.
 
 ## Deploy and rollback
 
