@@ -87,6 +87,17 @@ describe("fitness rules and immutable awards", () => {
     clock("2026-11-22");
   });
   afterEach(() => vi.useRealTimers());
+  it("uses the earliest legacy rule for a week before any effective date without adding bonuses", async () => {
+    clock("2026-11-08");
+    expect((await log("2026-11-08")).status).toBe(201);
+    const snapshot = await env.DB.prepare(
+      "SELECT rule_id,rule_json,points_tenths FROM weekly_consistency WHERE profile_id=? AND week_start='2026-11-02'",
+    ).bind(profile).first<{ rule_id: string; rule_json: string; points_tenths: number }>();
+    expect(snapshot?.rule_id).toBe("rule_v1");
+    expect(JSON.parse(snapshot!.rule_json)).toEqual({ consistency: [], consistencyMinMinutes: 20 });
+    expect(snapshot?.points_tenths).toBe(0);
+    expect(await bonus()).toBe(0);
+  });
   it("publishes fitness rates prospectively and preserves old awards and their scoring version", async () => {
     expect((await log("2026-11-22")).status).toBe(201);
     const rows = await json<{
