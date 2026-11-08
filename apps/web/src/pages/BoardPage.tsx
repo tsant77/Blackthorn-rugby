@@ -1,3 +1,5 @@
+import { ArrowUpRight, ArrowDownRight, Minus, Sparkles } from "lucide-react";
+import { displayRange } from "../lib/dates";
 import { useEffect, useState } from "react";
 import { formatPoints } from "@blackthorn/scoring";
 import { api, ApiError, type RosterPosition } from "../api";
@@ -34,7 +36,7 @@ export function BoardPage() {
     else if (filter !== "all") params.set("positionId", filter);
     void api<{ start: string; end: string; standings: Standing[] }>(`/api/leaderboard?${params}`).then((body) => {
       setStandings(body.standings);
-      setRange(`${body.start} to ${body.end}`);
+      setRange(displayRange(body.start, body.end));
       setError(null);
     }).catch((caught: unknown) => {
       setError(caught instanceof ApiError ? caught.message : "Could not load the board.");
@@ -77,13 +79,19 @@ export function BoardPage() {
       {standings.length === 0 ? <p className="text-quiet">No scored sessions in this view yet.</p> : null}
       <ol className="board-list flex flex-col">
         {standings.map((row) => (
-          <li key={row.profile_id} className={`flex items-center gap-s2 border-b border-line py-s1 ${row.profile_id === me?.profile?.id ? "text-gold-soft" : ""}`}>
+          <li key={row.profile_id} className={`standing-row ${row.profile_id === me?.profile?.id ? "text-gold-soft" : ""}`}>
             <span className="w-8 font-display text-2xl text-gold">{row.rank}</span>
             <span className="flex-1">
-              <span className="block font-heading font-semibold">{row.roster_name}</span>
-              <span className="text-sm text-quiet">{row.position_name ?? "No position"} · {row.group_name ?? "Coaches"} · {row.workout_count} sessions{period === "week" ? ` · ${movementLabel(row)}` : ""}</span>
+              <span className="block font-heading font-semibold break-words">{row.roster_name}</span>
+              <span className="block text-xs text-quiet break-words">{row.position_name ?? "No position"} · {row.group_name ?? "Coaches"}</span>
+              <span className="mt-half flex flex-wrap items-center gap-s1 text-xs text-quiet">{row.workout_count} sessions
+                {period === "week" ? <span className="rank-movement" aria-label={movementLabel(row)} title={movementLabel(row)}>
+                  {row.previousRank == null ? <Sparkles size={12} aria-hidden="true" /> : (row.movement ?? 0) > 0 ? <ArrowUpRight size={12} aria-hidden="true" /> : (row.movement ?? 0) < 0 ? <ArrowDownRight size={12} aria-hidden="true" /> : <Minus size={12} aria-hidden="true" />}
+                  {row.previousRank == null ? "New" : Math.abs(row.movement ?? 0) || "—"}
+                </span> : null}
+              </span>
             </span>
-            <span className="font-display text-2xl">{formatPoints(row.points_tenths)}</span>
+            <span className="text-right font-display text-2xl">{formatPoints(row.points_tenths)}<span className="block font-body text-xs text-quiet">PTS</span></span>
           </li>
         ))}
       </ol>

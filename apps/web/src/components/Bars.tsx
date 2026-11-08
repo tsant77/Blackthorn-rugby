@@ -1,3 +1,4 @@
+import { displayDate } from "../lib/dates";
 import { formatPoints } from "@blackthorn/scoring";
 
 export function Bars({ caption, rows }: { caption: string; rows: { label: string; value: number }[] }) {
@@ -21,7 +22,7 @@ export function Bars({ caption, rows }: { caption: string; rows: { label: string
         <tbody>
           {rows.map((row) => (
             <tr key={row.label} className="border-t border-line">
-              <th scope="row" className="py-half font-normal">{row.label}</th>
+              <th scope="row" className="py-half font-normal">{displayDate(row.label)}</th>
               <td className="py-half text-right">{formatPoints(row.value)}</td>
             </tr>
           ))}

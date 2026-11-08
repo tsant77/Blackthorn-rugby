@@ -1,6 +1,6 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useLayoutEffect, useState } from "react";
 import { Menu, X, House, Plus, Trophy, UserRound } from "lucide-react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useSession } from "../session";
 
 const items = [
@@ -14,9 +14,21 @@ export function Shell() {
   const { me } = useSession();
   const [menuOpen, setMenuOpen] = useState(false);
   const menu = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    if (menuOpen) menu.current?.showModal();
-    else menu.current?.close();
+  const { pathname } = useLocation();
+  const route = useRef(pathname);
+  route.current = pathname;
+  useLayoutEffect(() => {
+    if (!menuOpen) { menu.current?.close(); return; }
+    const scroll = window.scrollY, openedOn = route.current;
+    const previous = { position: document.body.style.position, top: document.body.style.top, width: document.body.style.width };
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${scroll}px`;
+    document.body.style.width = "100%";
+    menu.current?.showModal();
+    return () => {
+      Object.assign(document.body.style, previous);
+      window.scrollTo({ top: route.current === openedOn ? scroll : 0, behavior: "instant" });
+    };
   }, [menuOpen]);
   const staff = me?.membership.role === "admin" || me?.membership.role === "coach";
   if (me?.needsOnboarding) {
@@ -42,10 +54,11 @@ export function Shell() {
           {staff ? <SideLink to="/members">Members</SideLink> : null}
           {me?.membership.role === "admin" ? <SideLink to="/rules">Rules</SideLink> : null}
           {staff ? <SideLink to="/squad">Squad</SideLink> : null}
+          {me?.membership.role === "admin" ? <SideLink to="/registration">Registration</SideLink> : null}
           {me?.membership.role === "admin" ? <SideLink to="/invite">Invite</SideLink> : null}
         </nav>
       </aside>
-      <div className="pb-24 md:pb-0">
+      <div className="shell-content">
         <header className="mobile-header md:hidden">
           <Brand />
           <button type="button" className="menu-toggle" aria-label="Open club menu" aria-haspopup="dialog" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><Menu size={22} /></button>
@@ -63,7 +76,8 @@ export function Shell() {
             {staff ? <SideLink to="/members">Members</SideLink> : null}
             {me?.membership.role === "admin" ? <SideLink to="/rules">Rules</SideLink> : null}
             {staff ? <SideLink to="/squad">Squad</SideLink> : null}
-            {me?.membership.role === "admin" ? <SideLink to="/invite">Invite</SideLink> : null}
+            {me?.membership.role === "admin" ? <SideLink to="/registration">Registration</SideLink> : null}
+          {me?.membership.role === "admin" ? <SideLink to="/invite">Invite</SideLink> : null}
           </nav>
         </dialog>
         <Outlet />

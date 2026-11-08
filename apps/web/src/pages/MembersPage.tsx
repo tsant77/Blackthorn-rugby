@@ -33,6 +33,7 @@ export function MembersPage() {
   const [invitations, setInvitations] = useState<Invite[]>([]);
   const [positions, setPositions] = useState<RosterPosition[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [resetUrl, setResetUrl] = useState<string | null>(null);
   const [signInUrl, setSignInUrl] = useState<string | null>(null);
 
   async function load() {
@@ -70,6 +71,7 @@ export function MembersPage() {
     <main className="mx-auto flex max-w-lg flex-col gap-s3 px-s2 py-s4">
       <h1 className="font-heading text-2xl font-semibold">Members</h1>
       {error ? <p role="alert" className="text-gold-soft">{error}</p> : null}
+      {resetUrl ? <ShareLink url={resetUrl} label="Password reset link (15 minutes, single use)" /> : null}
       {signInUrl ? <ShareLink url={signInUrl} label="One-time sign-in link" /> : null}
       <ul className="flex flex-col gap-s2">
         {members.map((member) => (
@@ -86,6 +88,11 @@ export function MembersPage() {
             >
               Sign-in link
             </button>
+            {admin && member.role === "player" && member.status === "active" ? <button type="button" className="secondary-button mt-s1" onClick={() => {
+              setResetUrl(null);
+              void api<{ url: string }>("/api/password-resets", { method: "POST", body: JSON.stringify({ userId: member.user_id }) })
+                .then(body => setResetUrl(body.url)).catch((caught: unknown) => setError(caught instanceof ApiError ? caught.message : "Could not create a reset link."));
+            }}>Password reset link for {member.roster_name ?? member.name}</button> : null}
             {admin ? (
               <div className="mt-s1 flex flex-wrap items-end gap-s2">
                 <label className="flex flex-col gap-s1 text-sm text-quiet">

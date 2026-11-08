@@ -1,3 +1,4 @@
+import { displayDate } from "../lib/dates";
 import { Flame, Plus, ArrowUpRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -101,7 +102,7 @@ export function HomePage() {
         <div className="flex items-center justify-between"><h2 className="font-heading font-semibold">Recent activity</h2><Link to="/log" className="text-sm text-sage">View all</Link></div>
         {recent.status === "loading" ? <p role="status" className="text-sm text-quiet">Loading recent activity…</p>
           : recent.status === "error" ? <p role="alert" className="error-banner">Could not load recent activity.</p>
-          : recent.workouts.length ? recent.workouts.map((workout) => <article key={workout.id} className="session-card"><div><h3 className="font-heading font-semibold capitalize">{workout.type.replaceAll("_", " ")}</h3><p className="text-sm text-quiet">{workout.occurred_on} · {workout.duration_min} min</p></div><span className="font-display text-2xl text-gold">{formatPoints(workout.points_tenths)} <span className="font-body text-xs">PTS</span></span></article>) : <p className="text-sm text-quiet">Your first session starts the story. Log a workout to get going.</p>}
+          : recent.workouts.length ? recent.workouts.map((workout) => <article key={workout.id} className="session-card"><div><h3 className="font-heading font-semibold capitalize">{workout.type.replaceAll("_", " ")}</h3><p className="text-sm text-quiet">{displayDate(workout.occurred_on)} · {workout.duration_min} min</p></div><span className="font-display text-2xl text-gold">{formatPoints(workout.points_tenths)} <span className="font-body text-xs">PTS</span></span></article>) : <p className="text-sm text-quiet">Your first session starts the story. Log a workout to get going.</p>}
       </section> : null}
       <Link to="/team" className="rounded-md border border-line px-s2 py-s1 text-center font-heading font-semibold">Team dashboard</Link>
       {role === "admin" ? (

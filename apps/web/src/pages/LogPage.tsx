@@ -1,6 +1,7 @@
 import { Footprints, Dumbbell, Waves, Timer, CircleDot, Shield, Goal, CheckCircle2 } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
-import { formatPoints } from "@blackthorn/scoring";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { displayDate } from "../lib/dates";
+import { formulaTenths, formatPoints, type ScoringRule } from "@blackthorn/scoring";
 import { api, ApiError } from "../api";
 
 const TYPES = [
@@ -44,10 +45,18 @@ export function LogPage() {
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const busy = useRef(false);
+  const request = useRef<{ payload: string; id: string } | null>(null);
+  const [estimateRule, setEstimateRule] = useState<ScoringRule | null>(null);
+  const duration = Number(durationMin);
+  const multiplier = estimateRule?.types[type]?.multiplierHundredths;
+  const estimate = estimateRule && multiplier != null && Number.isInteger(duration) && duration >= 1 && duration <= 240
+    ? Math.min(estimateRule.sessionCapTenths, formulaTenths(duration, multiplier, estimateRule.intensityHundredths[intensity])) : null;
   const distance = type === "running" || type === "rower";
 
   async function load() {
-    const body = await api<{ today: string; minDate: string; workouts: Workout[] }>("/api/workouts");
+    const body = await api<{ today: string; minDate: string; workouts: Workout[]; estimateRule?: ScoringRule }>("/api/workouts");
+    setEstimateRule(body.estimateRule ?? null);
     setToday(body.today);
     setMinDate(body.minDate);
     setOccurredOn((current) => current || body.today);
@@ -59,6 +68,7 @@ export function LogPage() {
   }, []);
 
   function resetForm() {
+    request.current = null;
     setDurationMin("");
     setDistanceMiles("");
     setNotes("");
@@ -69,6 +79,8 @@ export function LogPage() {
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
+    if (busy.current) return;
+    busy.current = true;
     setPending(true);
     setError(null);
     setResult(null);
@@ -80,20 +92,27 @@ export function LogPage() {
       notes,
     };
     if (distance && distanceMiles) payload.distanceMiles = Number(distanceMiles);
-    if (!editing) payload.clientRequestId = crypto.randomUUID();
+    if (!editing) {
+      const fingerprint = JSON.stringify(payload);
+      if (request.current?.payload !== fingerprint) request.current = { payload: fingerprint, id: crypto.randomUUID() };
+      payload.clientRequestId = request.current.id;
+    }
     try {
       const path = editing ? `/api/workouts/${editing}` : "/api/workouts";
-      const saved = await api<{ awardedPointsTenths: number; flags: string[] }>(path, {
+      const saved = await api<{ awardedPointsTenths?: number; flags?: string[]; workout?: Workout; idempotent?: boolean }>(path, {
         method: editing ? "PATCH" : "POST",
         body: JSON.stringify(payload),
       });
-      const capped = saved.flags.includes("daily_cap") || saved.flags.includes("session_cap");
-      setResult(`${formatPoints(saved.awardedPointsTenths)} points${capped ? " after the cap" : ""}`);
+      const capped = saved.flags?.includes("daily_cap") || saved.flags?.includes("session_cap");
+      const awarded = saved.awardedPointsTenths ?? saved.workout?.points_tenths;
+      if (awarded == null) throw new Error("Missing saved workout points.");
+      setResult(`${formatPoints(awarded)} points${capped ? " after the cap" : ""}${saved.idempotent ? " · already saved" : ""}`);
       resetForm();
       await load();
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "Could not save the workout.");
     } finally {
+      busy.current = false;
       setPending(false);
     }
   }
@@ -129,7 +148,8 @@ export function LogPage() {
         <p className="text-sm text-quiet">Eastern Time. You can log up to 7 days back.</p>
       </div>
       {result ? <p role="status" className="success-banner"><CheckCircle2 aria-hidden="true" /><span><strong className="block">Workout saved</strong>{result}</span></p> : null}
-      <form onSubmit={onSubmit} className="workout-form flex flex-col gap-s2">
+      <form onSubmit={onSubmit} className="workout-form">
+        <fieldset disabled={pending} className="flex min-w-0 flex-col gap-s2">
         <h2 className="section-label">01 <span>Choose your activity</span></h2>
         <div className="activity-grid" role="group" aria-label="Workout type">
           {TYPES.map(([value, label], index) => {
@@ -175,7 +195,7 @@ export function LogPage() {
             max={240}
             value={durationMin}
             onChange={(event) => setDurationMin(event.target.value)}
-            className="rounded-md border border-line bg-canvas px-s2 py-s2 font-display text-4xl text-ink"
+            className="custom-duration rounded-md border border-line bg-canvas px-s2 py-s2 font-display text-3xl text-ink"
           />
         </label>
         <p className="text-sm text-quiet">Intensity</p>
@@ -218,7 +238,8 @@ export function LogPage() {
           />
         </label>
         {error ? <p role="alert" className="error-banner">{error}</p> : null}
-        <button type="submit" disabled={pending} className="save-workout disabled:opacity-60">
+        {estimate != null ? <div className="estimate-preview" aria-live="polite"><p>Estimated <strong>{formatPoints(estimate)} PTS</strong></p><p className="text-xs text-quiet">Before daily caps and training limits. Final points confirmed on save.</p></div> : null}
+        <button type="submit" disabled={pending || !today} className="save-workout disabled:opacity-60">
           {pending ? "Saving…" : editing ? "Save changes" : "Save workout"}
         </button>
         {editing ? (
@@ -226,6 +247,7 @@ export function LogPage() {
             Cancel edit
           </button>
         ) : null}
+        </fieldset>
       </form>
       <section className="flex flex-col gap-s2">
         <h2 className="font-heading font-semibold">Your sessions</h2>
@@ -235,17 +257,17 @@ export function LogPage() {
             <li key={workout.id} className="session-card">
               <div className="flex-1">
                 <p className="font-heading font-semibold capitalize">{workout.type.replaceAll("_", " ")}</p>
-                <p className="text-sm text-quiet">{workout.occurred_on} · {workout.duration_min} min · {sessionLabel(workout.status, workout.review_note)}</p>
+                <p className="text-sm text-quiet">{displayDate(workout.occurred_on)} · {workout.duration_min} min · {sessionLabel(workout.status, workout.review_note)}</p>
                 <p className="mt-half text-xs capitalize text-sage">{workout.intensity}{workout.distance_miles != null ? ` · ${workout.distance_miles} miles` : ""}</p>
                 {workout.notes ? <p className="mt-s1 text-sm text-quiet break-words">{workout.notes}</p> : null}
                 {workout.review_note ? <p className="text-sm text-gold-soft">{workout.review_note}</p> : null}
               </div>
               <p className="font-display text-2xl text-gold">{formatPoints(workout.points_tenths)}<span className="block text-right font-body text-xs text-quiet">PTS</span></p>
               {workout.status === "submitted" ? (
-                <>
-                  <button type="button" className="text-sm text-sage" onClick={() => startEdit(workout)}>Edit</button>
-                  <button type="button" className="text-sm text-gold-soft" onClick={() => void remove(workout.id)}>Delete</button>
-                </>
+                <div className="session-actions">
+                  <button type="button" className="text-sm text-sage" disabled={pending} onClick={() => startEdit(workout)}>Edit</button>
+                  <button type="button" className="text-sm text-gold-soft" disabled={pending} onClick={() => void remove(workout.id)}>Delete</button>
+                </div>
               ) : null}
             </li>
           ))}

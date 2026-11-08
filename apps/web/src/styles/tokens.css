@@ -165,3 +165,53 @@ main input[type=date] { color-scheme: dark; }
 @media (max-width: 359px) { .activity-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (min-width: 768px) { .mobile-header { display: none; } }
 @supports (padding: env(safe-area-inset-bottom)) { .pb-24 { padding-bottom: calc(96px + env(safe-area-inset-bottom)); } }
+
+/* Safe areas belong to the application frame, independent of route/header scroll. */
+html { background: #111c16; scroll-padding-block: calc(var(--safe-top) + 16px) calc(var(--safe-bottom) + 88px); }
+#root { min-height: 100dvh; padding-top: var(--safe-top); padding-left: var(--safe-left); padding-right: var(--safe-right); }
+.mobile-header { padding: 8px 16px; }
+.mobile-header img { height: 34px; }
+.mobile-header p:last-child { font-size: 11px; letter-spacing: .04em; }
+.shell-content { min-width: 0; padding-bottom: calc(84px + var(--safe-bottom)); }
+.bottom-nav { padding-left: var(--safe-left); padding-right: var(--safe-right); }
+.bottom-nav a { min-height: 60px; color: #c2cabb; }
+.bottom-nav a[aria-current=page] { color: var(--gold); }
+.club-menu { top: calc(12px + var(--safe-top)); right: calc(12px + var(--safe-right)); max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 24px); overscroll-behavior: contain; }
+main.mx-auto { padding-top: 24px; padding-bottom: 24px; gap: 20px; }
+main:focus { outline: none; }
+main input, main select, main textarea, main button { scroll-margin-block: 24px calc(84px + var(--safe-bottom)); }
+.performance-hero { padding: 20px; }
+.performance-hero .hero-points { font-size: 52px; }
+.performance-hero .mt-s2 { margin-top: 12px; }
+.workout-form { min-width: 0; }
+.workout-form fieldset { gap: 12px; }
+.activity-card { min-height: 78px; gap: 8px; }
+.custom-duration::placeholder { font-family: var(--font-body); font-size: 16px; color: #a8ad9f; opacity: 1; }
+.estimate-preview { border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; background: #1b241e; color: var(--sage); }
+.session-card .session-actions { display: flex; flex: 1 0 100%; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+.session-actions button { flex: 1; }
+.standing-row { display: grid; grid-template-columns: 28px minmax(0,1fr) auto; align-items: center; gap: 12px; }
+.rank-movement { display: inline-flex; align-items: center; gap: 2px; padding: 2px 5px; border-radius: 6px; background: #c5dab510; color: var(--sage); }
+.panel { display: flex; min-width: 0; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; border: 1px solid var(--line); background: var(--raised); }
+.auth-page { display: flex; flex-direction: column; gap: 20px; width: 100%; max-width: 512px; margin-inline: auto; padding: 32px 16px calc(32px + var(--safe-bottom)); min-height: calc(100dvh - var(--safe-top)); justify-content: center; }
+.field { display: flex; flex-direction: column; gap: 8px; font-size: 14px; color: var(--sage); }
+.field input, .field select { padding: 12px; border: 1px solid var(--line); color: var(--ink); font-size: 16px; }
+.secondary-button { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--sage); font-size: 14px; }
+button:disabled { cursor: wait; opacity: .6; }
+.player-identity { flex-direction: row; align-items: center; gap: 16px; }
+.player-identity > div:last-child { min-width: 0; }
+.player-monogram { display: grid; place-items: center; flex: 0 0 56px; height: 56px; border-radius: 50%; background: #f2b10b15; color: var(--gold); border: 1px solid #f2b10b66; font-family: var(--font-display); font-size: 24px; }
+.profile-stats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; padding: 16px 8px; border: 1px solid var(--line); border-radius: 16px; background: var(--raised); text-align: center; }
+.badge-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.achievement { min-width: 0; padding: 16px; border-radius: 16px; border: 1px solid var(--line); background: var(--raised); color: var(--sage); }
+.achievement.earned { border-color: #f2b10b66; background: linear-gradient(135deg,#f2b10b18,var(--raised)); color: var(--gold); }
+progress { display: block; width: 100%; height: 5px; border: none; border-radius: 5px; overflow: hidden; background: var(--line); color: var(--gold); accent-color: var(--gold); }
+progress::-webkit-progress-bar { background: var(--line); }
+progress::-webkit-progress-value { background: var(--gold); }
+progress::-moz-progress-bar { background: var(--gold); }
+@media (min-width:768px) { .shell-content { padding-bottom: 0; } }
+@media (max-height:500px) and (orientation:landscape) { .auth-page { justify-content: flex-start; } }
+
+:root { --safe-top: env(safe-area-inset-top, 0px); --safe-bottom: env(safe-area-inset-bottom, 0px); --safe-left: env(safe-area-inset-left, 0px); --safe-right: env(safe-area-inset-right, 0px); }
+
+.bottom-nav { padding-bottom: var(--safe-bottom); }
