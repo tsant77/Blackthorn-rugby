@@ -15,18 +15,42 @@ interface Dashboard {
   weeks: { start: string; pointsTenths: number }[];
 }
 
+interface RecentWorkout {
+  id: string;
+  type: string;
+  occurred_on: string;
+  duration_min: number;
+  points_tenths: number;
+  status: string;
+}
+
+type RecentActivity =
+  | { status: "loading" }
+  | { status: "error" }
+  | { status: "ready"; workouts: RecentWorkout[] };
+
 export function HomePage() {
   const { me } = useSession();
   const role = me?.membership.role;
   const staff = role === "admin" || role === "coach";
   const [error, setError] = useState<string | null>(null);
-  const [recent, setRecent] = useState<{ id: string; type: string; occurred_on: string; duration_min: number; points_tenths: number }[]>([]);
+  const [recent, setRecent] = useState<RecentActivity>({ status: "loading" });
   const [dash, setDash] = useState<Dashboard | null>(null);
 
   useEffect(() => {
     if (!me?.profile) return;
     void api<Dashboard>("/api/dashboard").then(setDash).catch((caught: unknown) => setError(caught instanceof ApiError ? caught.message : "Could not load your training data."));
-    void api<{ workouts: typeof recent }>("/api/workouts").then((body) => setRecent(body.workouts.slice(0, 3))).catch(() => setError("Could not load recent activity."));
+    let active = true;
+    setRecent({ status: "loading" });
+    void api<{ workouts: RecentWorkout[] }>("/api/workouts").then((body) => {
+      if (active) setRecent({
+        status: "ready",
+        workouts: body.workouts.filter((workout) => workout.status !== "voided" && workout.status !== "rejected").slice(0, 3),
+      });
+    }).catch(() => {
+      if (active) setRecent({ status: "error" });
+    });
+    return () => { active = false; };
   }, [me]);
 
   return (
@@ -75,7 +99,9 @@ export function HomePage() {
       ) : null}
       {me?.profile ? <section className="flex flex-col gap-s2">
         <div className="flex items-center justify-between"><h2 className="font-heading font-semibold">Recent activity</h2><Link to="/log" className="text-sm text-sage">View all</Link></div>
-        {recent.length ? recent.map((workout) => <article key={workout.id} className="session-card"><div><h3 className="font-heading font-semibold capitalize">{workout.type.replaceAll("_", " ")}</h3><p className="text-sm text-quiet">{workout.occurred_on} · {workout.duration_min} min</p></div><span className="font-display text-2xl text-gold">{formatPoints(workout.points_tenths)} <span className="font-body text-xs">PTS</span></span></article>) : <p className="text-sm text-quiet">Your first session starts the story. Log a workout to get going.</p>}
+        {recent.status === "loading" ? <p role="status" className="text-sm text-quiet">Loading recent activity…</p>
+          : recent.status === "error" ? <p role="alert" className="error-banner">Could not load recent activity.</p>
+          : recent.workouts.length ? recent.workouts.map((workout) => <article key={workout.id} className="session-card"><div><h3 className="font-heading font-semibold capitalize">{workout.type.replaceAll("_", " ")}</h3><p className="text-sm text-quiet">{workout.occurred_on} · {workout.duration_min} min</p></div><span className="font-display text-2xl text-gold">{formatPoints(workout.points_tenths)} <span className="font-body text-xs">PTS</span></span></article>) : <p className="text-sm text-quiet">Your first session starts the story. Log a workout to get going.</p>}
       </section> : null}
       <Link to="/team" className="rounded-md border border-line px-s2 py-s1 text-center font-heading font-semibold">Team dashboard</Link>
       {role === "admin" ? (
