@@ -1,11 +1,6 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import app, { type Env } from "./app";
-
-const migrationDir = join(dirname(fileURLToPath(import.meta.url)), "../../../packages/db/migrations");
+import { openTestDatabase } from "./test-db";
 
 describe("magic links and onboarding", () => {
   let env: Env;
@@ -161,53 +156,3 @@ describe("magic links and onboarding", () => {
     return header.split(";")[0] ?? "";
   }
 });
-
-function openTestDatabase(): D1Database {
-  const sqlite = new DatabaseSync(":memory:");
-  sqlite.exec("PRAGMA foreign_keys = ON");
-  for (const name of readdirSync(migrationDir).filter((file) => file.endsWith(".sql")).sort()) {
-    const sql = readFileSync(join(migrationDir, name), "utf8").replaceAll("--> statement-breakpoint", "");
-    sqlite.exec(sql);
-  }
-
-  function statement(sql: string, params: unknown[]) {
-    return {
-      async run() {
-        const info = sqlite.prepare(sql).run(...params);
-        return { success: true, meta: { changes: info.changes } };
-      },
-      async first<T>() {
-        const row = sqlite.prepare(sql).get(...params);
-        return (row ?? null) as T | null;
-      },
-      async all<T>() {
-        return { results: sqlite.prepare(sql).all(...params) as T[] };
-      },
-    };
-  }
-
-  return {
-    prepare(sql: string) {
-      return {
-        bind(...params: unknown[]) {
-          return statement(sql, params);
-        },
-      };
-    },
-    async batch<T>(statements: { run: () => Promise<T> }[]) {
-      sqlite.exec("BEGIN");
-      try {
-        const results: T[] = [];
-        for (const entry of statements) results.push(await entry.run());
-        sqlite.exec("COMMIT");
-        return results;
-      } catch (error) {
-        sqlite.exec("ROLLBACK");
-        throw error;
-      }
-    },
-    async exec() {
-      return { count: 0, duration: 0 };
-    },
-  } as unknown as D1Database;
-}

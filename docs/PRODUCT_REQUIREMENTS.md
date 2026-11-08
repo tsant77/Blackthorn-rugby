@@ -26,7 +26,7 @@ The schema is multi-club. Version 1 is operated as one club. Youth and senior si
 | --- | --- | --- |
 | 1 | Requirements, schema, scoring spec and engine, design system | This phase |
 | 2 | App shell, invitation auth, onboarding | This phase |
-| 3 | Workout logging wired to the scoring engine | Engine only |
+| 3 | Workout logging wired to the scoring engine | This phase |
 | 4 | Dashboard, leaderboards, analytics | Not started |
 | 5 | Coach and admin tools, export, moderation | Not started |
 | 6 | Challenges, achievements, notifications | Tables only |

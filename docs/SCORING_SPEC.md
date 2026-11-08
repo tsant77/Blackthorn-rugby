@@ -96,19 +96,15 @@ The club timezone for Blackthorn is `America/New_York` until an admin sets anoth
 - If the caller passes an offseason start or end, dates outside that inclusive window MUST be rejected (`outside_offseason`). Null bounds mean "not configured," not "closed."
 - If a start time is present, its civil date in the club timezone MUST equal `occurredOn`.
 
-## Duplicates and overlaps
+## Same-day sessions
 
-Checked in this order:
+Owner decision, 8 November 2026, after Phase 2: identical workouts on the same day all count. The engine MUST NOT reject a session because it matches another session's type, duration, or clock time, and MUST NOT reject an overlap.
 
-1. Same `clientRequestId` on a non-voided session: outcome `duplicate`, no new ledger rows. The API should return the original session. A voided session MAY be resubmitted with the same id.
-2. Real time overlap with a counted session: `overlapping_session`. Touching endpoints (one ends when the next starts) are not an overlap. If only a start is present, the end is start plus duration.
-3. Heuristic duplicate: same player, type, civil date, and duration, and either both sessions have no start time, or both starts fall within `duplicateStartWindowMin` (default 15). Outcome `reject` / `duplicate_submission`.
+The only competitive limits are the session cap, the daily cap, and the weekly load guard.
 
-The owner left the same-day question open. The rule in force is the one above: different start times more than 15 minutes apart both count. Identical logs with no start time do not.
+A repeated submit of the same form is not a second workout. Same `clientRequestId` on a non-voided session returns outcome `duplicate` and no new ledger rows. The API returns the original session. A voided session MAY be resubmitted with the same id. `duplicateStartWindowMin` remains on the rule object so old configs still parse. It is not applied.
 
-Known hole: a session with a start time is not treated as a heuristic duplicate of a same-day session that has no start time. Overlap still applies when the timed session can be placed. Players who train twice in a day should send start times.
-
-When editing, the caller MUST omit the session being edited from `history`. Otherwise it overlaps itself. `planReversal(netTenths)` builds the ledger row that cancels the previous net award before the new decision is posted.
+When editing, the caller MUST omit the session being edited from `history`. Otherwise its previous points and minutes count again toward the caps. `planReversal(netTenths)` builds the ledger row that cancels the previous net award before the new decision is posted. Ledger rows are never updated.
 
 ## Injury and overtraining
 

@@ -11,8 +11,8 @@ describe("API shell", () => {
     });
   });
 
-  it("does not expose product routes yet", async () => {
+  it("requires a session before listing workouts", async () => {
     const response = await app.request("http://localhost/api/workouts");
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(401);
   });
 });

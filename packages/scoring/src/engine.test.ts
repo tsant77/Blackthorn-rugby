@@ -256,109 +256,40 @@ describe("duplicates, overlaps, and abuse", () => {
     expect(decision.outcome).toBe("award");
   });
 
-  it("rejects an identical log with no start times, and near-identical start times", () => {
-    const same = score({ history: [prior({ durationMin: 40 })] }, { durationMin: 40 });
-    expect(same.rejectCode).toBe("duplicate_submission");
+  it("counts identical and overlapping same-day sessions, and lets the daily cap bind", () => {
+    const identical = score({ history: [prior({ durationMin: 40, awardedPointsTenths: 60 })] }, { durationMin: 40 });
+    expect(identical.outcome).toBe("award");
+    expect(identical.awardedPointsTenths).toBe(60);
 
-    const close = score(
-      {
-        history: [prior({
-          durationMin: 10,
-          startedAt: "2026-11-08T15:00:00.000Z",
-          endedAt: "2026-11-08T15:10:00.000Z",
-        })],
-      },
-      {
-        durationMin: 10,
-        startedAt: "2026-11-08T15:12:00.000Z",
-        endedAt: "2026-11-08T15:22:00.000Z",
-      },
-    );
-    expect(close.rejectCode).toBe("duplicate_submission");
-
-    const separated = score(
-      {
-        history: [prior({
-          durationMin: 10,
-          startedAt: "2026-11-08T15:00:00.000Z",
-          endedAt: "2026-11-08T15:10:00.000Z",
-        })],
-      },
-      {
-        durationMin: 10,
-        startedAt: "2026-11-08T15:20:00.000Z",
-        endedAt: "2026-11-08T15:30:00.000Z",
-      },
-    );
-    expect(separated.outcome).toBe("award");
-  });
-
-  it("rejects overlapping intervals and allows sessions that only touch", () => {
     const overlap = score(
       {
         history: [prior({
           durationMin: 40,
+          awardedPointsTenths: 60,
           startedAt: "2026-11-08T15:00:00.000Z",
           endedAt: "2026-11-08T15:40:00.000Z",
-        })],
-      },
-      {
-        durationMin: 30,
-        startedAt: "2026-11-08T15:30:00.000Z",
-        endedAt: "2026-11-08T16:00:00.000Z",
-      },
-    );
-    expect(overlap.rejectCode).toBe("overlapping_session");
-
-    const touching = score(
-      {
-        history: [prior({
-          durationMin: 30,
-          startedAt: "2026-11-08T15:00:00.000Z",
-          endedAt: "2026-11-08T15:30:00.000Z",
-        })],
-      },
-      {
-        durationMin: 30,
-        startedAt: "2026-11-08T15:30:00.000Z",
-        endedAt: "2026-11-08T16:00:00.000Z",
-      },
-    );
-    expect(touching.outcome).toBe("award");
-  });
-
-  it("derives an end time from duration when overlap-checking a start-only session", () => {
-    const decision = score(
-      {
-        history: [prior({
-          durationMin: 40,
-          startedAt: "2026-11-08T15:00:00.000Z",
         })],
       },
       {
         durationMin: 30,
         startedAt: "2026-11-08T15:20:00.000Z",
-      },
-    );
-    expect(decision.rejectCode).toBe("overlapping_session");
-  });
-
-  it("rejects the session being edited when the caller leaves it in history", () => {
-    const decision = score(
-      {
-        history: [prior({
-          durationMin: 40,
-          startedAt: "2026-11-08T15:00:00.000Z",
-          endedAt: "2026-11-08T15:40:00.000Z",
-        })],
-      },
-      {
-        durationMin: 50,
-        startedAt: "2026-11-08T15:00:00.000Z",
         endedAt: "2026-11-08T15:50:00.000Z",
       },
     );
-    expect(decision.rejectCode).toBe("overlapping_session");
+    expect(overlap.outcome).toBe("award");
+    expect(overlap.awardedPointsTenths).toBe(45);
+
+    const capped = score({ history: [prior({ durationMin: 40, awardedPointsTenths: 300 })] }, { durationMin: 40 });
+    expect(capped.awardedPointsTenths).toBe(0);
+    expect(capped.flags).toContain("daily_cap");
+  });
+
+  it("counts a session being edited again when the caller leaves it in history", () => {
+    const decision = score({
+      history: [prior({ durationMin: 40, awardedPointsTenths: 280 })],
+    }, { durationMin: 40 });
+    expect(decision.outcome).toBe("award");
+    expect(decision.awardedPointsTenths).toBe(20);
   });
 
   it("rejects implausible pace, split, and load", () => {

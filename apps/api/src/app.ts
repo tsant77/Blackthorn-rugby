@@ -4,6 +4,7 @@ import type { SendEmail } from "@cloudflare/workers-types";
 import { clubCatalog } from "@blackthorn/db/catalog";
 import { cloudflareEmailProvider, consoleEmailProvider, renderMagicLink, type EmailProvider } from "./email";
 import { randomToken, secretsEqual, sha256Hex } from "./tokens";
+import { registerWorkoutRoutes } from "./workouts";
 
 const CLUB_ID = clubCatalog.id;
 const SESSION_COOKIE = "blackthorn_session";
@@ -42,6 +43,7 @@ interface SessionRow {
   group_id: string | null;
   injury_status: string | null;
   injury_note: string | null;
+  training_locked: number | null;
 }
 
 export function createApp(): Hono<AppEnv> {
@@ -219,6 +221,8 @@ export function createApp(): Hono<AppEnv> {
     ).bind(to).all();
     return c.json({ messages: rows.results });
   });
+
+  registerWorkoutRoutes(app, currentSession);
 
   app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
   app.all("/auth/*", (c) => c.redirect("/login?error=invalid"));
@@ -403,7 +407,8 @@ async function currentSession(c: AppContext): Promise<SessionRow | null> {
   return c.env.DB.prepare(
     `SELECT u.id AS user_id, u.email, u.name, u.status AS user_status,
             m.id AS membership_id, m.role, m.status AS membership_status, m.club_id,
-            p.id AS profile_id, p.roster_name, p.position_id, p.group_id, p.injury_status, p.injury_note
+            p.id AS profile_id, p.roster_name, p.position_id, p.group_id, p.injury_status, p.injury_note,
+            p.training_locked
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      JOIN club_memberships m ON m.user_id = u.id AND m.club_id = ? AND m.status = 'active'

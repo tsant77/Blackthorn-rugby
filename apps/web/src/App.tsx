@@ -2,8 +2,11 @@ import type { ReactNode } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { EmptyState, LoadingScreen, Shell } from "./components/Shell";
+import { ActivityPage } from "./pages/ActivityPage";
+import { BoardPage } from "./pages/BoardPage";
 import { DesignPage } from "./pages/DesignPage";
 import { HomePage } from "./pages/HomePage";
+import { LogPage } from "./pages/LogPage";
 import { InvitePage } from "./pages/InvitePage";
 import { LoginPage } from "./pages/LoginPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
@@ -21,9 +24,9 @@ export function App() {
           <Route element={<RequireSession />}>
             <Route element={<Shell />}>
               <Route path="/" element={<HomePage />} />
-              <Route path="/log" element={<EmptyState title="Log a workout" body="Logging opens in the next release. Your sessions will score on the server, not in the browser." />} />
-              <Route path="/board" element={<EmptyState title="Leaderboard" body="The weekly, monthly, and offseason boards will fill in once workouts are logged. Submitted sessions count immediately." />} />
-              <Route path="/activity" element={<EmptyState title="Team activity" body="Teammate sessions will show up here." />} />
+              <Route path="/log" element={<LogPage />} />
+              <Route path="/board" element={<BoardPage />} />
+              <Route path="/activity" element={<ActivityPage />} />
               <Route path="/you" element={<ProfilePage />} />
               <Route path="/invite" element={<InvitePage />} />
               <Route path="/squad" element={<SquadPage />} />

@@ -77,26 +77,6 @@ export function scoreWorkout(input: ScoreInput): ScoreDecision {
   const injuryError = validateInjury(input);
   if (injuryError) return reject(input, injuryError.code, injuryError.message);
 
-  const overlap = findOverlap(input);
-  if (overlap) {
-    return reject(
-      input,
-      "overlapping_session",
-      "This session overlaps another workout already on the calendar.",
-      overlap.id,
-    );
-  }
-
-  const duplicate = findHeuristicDuplicate(input);
-  if (duplicate) {
-    return reject(
-      input,
-      "duplicate_submission",
-      "This looks like the same workout logged twice.",
-      duplicate.id,
-    );
-  }
-
   if (weeklyLoadExceeds(input)) {
     return reject(
       input,
@@ -371,29 +351,6 @@ function findIdempotent(input: ScoreInput): PriorWorkout | undefined {
   );
 }
 
-function findOverlap(input: ScoreInput): PriorWorkout | undefined {
-  const current = resolveInterval(input.workout);
-  if (!current) return undefined;
-  return counted(input).find((prior) => {
-    const other = resolveInterval(prior);
-    if (!other) return false;
-    return current.startMs < other.endMs && other.startMs < current.endMs;
-  });
-}
-
-function findHeuristicDuplicate(input: ScoreInput): PriorWorkout | undefined {
-  const workout = input.workout;
-  const windowMs = input.rule.duplicateStartWindowMin * 60_000;
-  return counted(input).find((prior) => {
-    if (prior.type !== workout.type || prior.occurredOn !== workout.occurredOn) return false;
-    if (prior.durationMin !== workout.durationMin) return false;
-    if (prior.startedAt == null && workout.startedAt == null) return true;
-    if (prior.startedAt == null || workout.startedAt == null) return false;
-    const delta = Math.abs(Date.parse(prior.startedAt) - Date.parse(workout.startedAt));
-    return Number.isFinite(delta) && delta <= windowMs;
-  });
-}
-
 function weeklyLoadExceeds(input: ScoreInput): boolean {
   const loads = new Map<string, number>();
   for (const prior of counted(input)) {
@@ -467,19 +424,6 @@ function validateInterval(
     return { code: "duration_mismatch", message: "Duration does not match the start and end times." };
   }
   return null;
-}
-
-function resolveInterval(workout: Pick<WorkoutDraft, "startedAt" | "endedAt" | "durationMin">): { startMs: number; endMs: number } | null {
-  if (workout.startedAt == null) return null;
-  const startMs = Date.parse(workout.startedAt);
-  if (!Number.isFinite(startMs)) return null;
-  if (workout.endedAt != null) {
-    const endMs = Date.parse(workout.endedAt);
-    if (!Number.isFinite(endMs) || endMs <= startMs) return null;
-    return { startMs, endMs };
-  }
-  if (!Number.isInteger(workout.durationMin) || workout.durationMin <= 0) return null;
-  return { startMs, endMs: startMs + workout.durationMin * 60_000 };
 }
 
 function inRange(value: number | undefined, min: number, max: number): value is number {
