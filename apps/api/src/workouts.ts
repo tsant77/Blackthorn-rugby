@@ -315,7 +315,7 @@ function athleteOf(session: PlayerSession): { injuryStatus: "available" | "limit
   return { injuryStatus, trainingLocked: session.training_locked === 1 };
 }
 
-async function scoringBasis(db: D1Database) {
+export async function scoringBasis(db: D1Database) {
   const [clubs, periods] = await db.batch([
     db.prepare("SELECT timezone FROM clubs WHERE id = ?").bind(CLUB_ID),
     db.prepare(
