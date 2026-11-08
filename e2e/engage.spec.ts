@@ -12,7 +12,7 @@ test("a badge, a challenge, and a void notice", async ({ page }) => {
   await page.getByLabel("Roster name").fill("Test Player");
   await page.getByLabel("Position").selectOption({ label: "Fullback" });
   await page.getByRole("button", { name: "Save profile" }).click();
-  await page.getByRole("link", { name: "Log" }).click();
+  await page.getByRole("link", { name: "Log", exact: true }).click();
   await page.getByLabel("Minutes").fill("40");
   await page.getByRole("button", { name: "Save workout" }).click();
   await expect(page.getByRole("status")).toContainText("6.0 points");
@@ -48,6 +48,7 @@ test("a badge, a challenge, and a void notice", async ({ page }) => {
   await page.context().clearCookies();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(playerUrl);
+  await page.getByRole("button", { name: "Open club menu" }).click();
   await page.getByRole("link", { name: "Inbox", exact: true }).click();
   await expect(page.getByText("logged by mistake")).toBeVisible();
   await expect(page.getByText("Logged twice")).toBeVisible();

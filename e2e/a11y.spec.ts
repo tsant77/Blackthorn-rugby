@@ -24,7 +24,7 @@ test("login and home meet axe and keyboard reach the main actions", async ({ pag
   await page.screenshot({ path: `${shots}/home-desktop.png` });
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("link", { name: "Log" }).click();
+  await page.getByRole("link", { name: "Log", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Log a workout" })).toBeVisible();
   const log = await new AxeBuilder({ page }).analyze();
   expect(log.violations).toEqual([]);

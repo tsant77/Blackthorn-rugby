@@ -15,7 +15,7 @@ test("log a workout and see it on the leaderboard", async ({ page }) => {
   await page.getByRole("button", { name: "Save profile" }).click();
   await expect(page.getByRole("heading", { name: "Test Player" })).toBeVisible();
 
-  await page.getByRole("link", { name: "Log" }).click();
+  await page.getByRole("link", { name: "Log", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Log a workout" })).toBeVisible();
   await page.screenshot({ path: `${shots}/log-mobile.png` });
   await page.getByRole("button", { name: "Running" }).click();

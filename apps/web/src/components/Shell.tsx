@@ -1,4 +1,5 @@
-import { House, Plus, Trophy, UserRound } from "lucide-react";
+import { useRef, useEffect, useState } from "react";
+import { Menu, X, House, Plus, Trophy, UserRound } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useSession } from "../session";
 
@@ -11,6 +12,12 @@ const items = [
 
 export function Shell() {
   const { me } = useSession();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menu = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (menuOpen) menu.current?.showModal();
+    else menu.current?.close();
+  }, [menuOpen]);
   const staff = me?.membership.role === "admin" || me?.membership.role === "coach";
   if (me?.needsOnboarding) {
     return (
@@ -39,11 +46,17 @@ export function Shell() {
         </nav>
       </aside>
       <div className="pb-24 md:pb-0">
-        <header className="border-b border-line bg-raised md:hidden">
-          <div className="px-s2 py-s2">
-            <Brand />
+        <header className="mobile-header md:hidden">
+          <Brand />
+          <button type="button" className="menu-toggle" aria-label="Open club menu" aria-haspopup="dialog" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><Menu size={22} /></button>
+        </header>
+        <dialog ref={menu} aria-label="Club menu" className="club-menu" onCancel={() => setMenuOpen(false)} onClick={(event) => { if (event.target === event.currentTarget) setMenuOpen(false); }}>
+          <div className="flex items-center justify-between border-b border-line pb-s2">
+            <h2 className="font-heading text-lg font-semibold">Club menu</h2>
+            <button type="button" className="menu-toggle" aria-label="Close club menu" onClick={() => setMenuOpen(false)}><X /></button>
           </div>
-          <nav aria-label="Club" className="flex flex-wrap gap-s1 px-s2 pb-s2">
+          <nav aria-label="Club" className="mt-s2 flex flex-col gap-s1" onClick={(event) => { if ((event.target as HTMLElement).closest("a")) setMenuOpen(false); }}>
+            <SideLink to="/team">Team</SideLink>
             <SideLink to="/challenges">Challenges</SideLink>
             <SideLink to="/inbox">Inbox</SideLink>
             {staff ? <SideLink to="/moderate">Moderate</SideLink> : null}
@@ -52,11 +65,10 @@ export function Shell() {
             {staff ? <SideLink to="/squad">Squad</SideLink> : null}
             {me?.membership.role === "admin" ? <SideLink to="/invite">Invite</SideLink> : null}
           </nav>
-          <div className="h-1 bg-gold" />
-        </header>
+        </dialog>
         <Outlet />
       </div>
-      <nav aria-label="Primary" className="fixed inset-x-0 bottom-0 border-t border-line bg-raised md:hidden">
+      <nav aria-label="Primary" className="bottom-nav fixed inset-x-0 bottom-0 border-t border-line bg-raised md:hidden">
         <ul className="grid grid-cols-4">
           {items.map((item) => (
             <li key={item.to}>
@@ -92,10 +104,10 @@ function Header() {
 function Brand() {
   return (
     <div className="flex items-center gap-s2">
-      <img src="/brand/logo.jpg" alt="" width={64} height={70} className="h-12 w-auto rounded-md bg-white p-half" />
+      <img src="/brand/logo.jpg" alt="" width={64} height={70} className="h-10 w-auto rounded-md bg-white p-half" />
       <div>
         <p className="font-heading text-sm font-semibold text-sage">Blackthorn Rugby</p>
-        <p className="font-heading text-lg font-semibold leading-tight">Offseason</p>
+        <p className="font-heading text-sm font-semibold leading-tight">OFFSEASON TRAINING</p>
       </div>
     </div>
   );

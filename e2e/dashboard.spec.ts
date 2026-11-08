@@ -15,7 +15,7 @@ test("coach logs and opens the dashboard", async ({ page }) => {
   await page.getByRole("button", { name: "Save profile" }).click();
   await expect(page.getByRole("heading", { name: "Coach Kim" })).toBeVisible();
 
-  await page.getByRole("link", { name: "Log" }).click();
+  await page.getByRole("link", { name: "Log", exact: true }).click();
   await expect(page.getByLabel("Date")).toBeVisible();
   await page.screenshot({ path: `${shots}/log-date-mobile.png` });
   await page.getByLabel("Minutes").fill("40");
