@@ -186,12 +186,15 @@ export async function throttle(c: C, kind: string, max: number, window = 15 * MI
   const ip = c.req.header("cf-connecting-ip") ?? "local";
   const bucket = kind + ":" + await sha256Hex(identity ?? ip);
   const start = Math.floor(Date.now() / window) * window;
-  const row = await c.env.DB.prepare(`INSERT INTO auth_limits(bucket,window_start,attempts) VALUES(?,?,1)
+  const [attempts] = await c.env.DB.batch<{ attempts: number }>([
+    c.env.DB.prepare(`INSERT INTO auth_limits(bucket,window_start,attempts) VALUES(?,?,1)
     ON CONFLICT(bucket) DO UPDATE SET window_start=excluded.window_start,
     attempts=CASE WHEN auth_limits.window_start=excluded.window_start THEN auth_limits.attempts+1 ELSE 1 END RETURNING attempts`)
-    .bind(bucket, start).first<{ attempts: number }>();
-  // Bound retention without background jobs or storing raw IP addresses/usernames.
-  await c.env.DB.prepare("DELETE FROM auth_limits WHERE window_start<?").bind(Date.now() - 24 * 60 * MINUTE).run();
+    .bind(bucket, start),
+    // Bound retention without background jobs or storing raw IP addresses/usernames.
+    c.env.DB.prepare("DELETE FROM auth_limits WHERE window_start<?").bind(Date.now() - 24 * 60 * MINUTE),
+  ]);
+  const row = attempts?.results[0];
   const allowed = (row?.attempts ?? max + 1) <= max;
   if (!allowed) c.header("Retry-After", String(Math.max(1, Math.ceil((start + window - Date.now()) / 1000))));
   return allowed;

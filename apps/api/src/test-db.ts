@@ -16,7 +16,13 @@ export function openTestDatabase(): D1Database {
   function statement(sql: string, params: unknown[]) {
     return {
       async run() {
-        const info = sqlite.prepare(sql).run(...(params as Array<string | number | null | bigint | Uint8Array>));
+        const prepared = sqlite.prepare(sql);
+        if (prepared.columns().length) {
+          const results = prepared.all(...(params as Array<string | number | null | bigint | Uint8Array>));
+          const changes = /^\s*SELECT\b/i.test(sql) ? 0 : Number(sqlite.prepare("SELECT changes() AS n").get()!.n);
+          return { success: true, results, meta: { changes } };
+        }
+        const info = prepared.run(...(params as Array<string | number | null | bigint | Uint8Array>));
         return { success: true, meta: { changes: info.changes } };
       },
       async first<T>() {

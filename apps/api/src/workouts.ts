@@ -85,8 +85,10 @@ export function registerWorkoutRoutes(
     const context = await scoringContext(c.env.DB);
     const draft = draftFromBody(body, context.today);
     if (!draft) return c.json({ error: "Check the duration, type, and date." }, 400);
-    const selected = await ruleForDate(c.env.DB, draft.workout.occurredOn);
-    context.rule = selected.rule; context.ruleId = selected.id;
+    if (draft.workout.occurredOn !== context.today) {
+      const selected = await ruleForDate(c.env.DB, draft.workout.occurredOn);
+      context.rule = selected.rule; context.ruleId = selected.id;
+    }
     const existing = draft.clientRequestId
       ? await c.env.DB.prepare(
         "SELECT id FROM workouts WHERE player_profile_id = ? AND client_request_id = ? ",
@@ -144,9 +146,10 @@ export function registerWorkoutRoutes(
       throw error;
     }
     await syncBadges(c.env, session.profile_id!, now);
-    const actual = await netPoints(c.env.DB, id);
+    const payload = await workoutPayload(c.env.DB, id, session.profile_id!);
+    const actual = payload.workout?.points_tenths ?? 0;
     return c.json({
-      ...(await workoutPayload(c.env.DB, id, session.profile_id!)),
+      ...payload,
       awardedPointsTenths: actual,
       grossPointsTenths: decision.grossPointsTenths,
       flags: [...decision.flags.filter(f=>f!=="daily_cap"),...(actual < Math.min(decision.grossPointsTenths,context.rule.sessionCapTenths)?["daily_cap"]:[])],
@@ -212,9 +215,10 @@ export function registerWorkoutRoutes(
       throw error;
     }
     await syncBadges(c.env, session.profile_id!, now);
-    const actual = await netPoints(c.env.DB, owned.id);
+    const payload = await workoutPayload(c.env.DB, owned.id, session.profile_id!);
+    const actual = payload.workout?.points_tenths ?? 0;
     return c.json({
-      ...(await workoutPayload(c.env.DB, owned.id, session.profile_id!)),
+      ...payload,
       awardedPointsTenths: actual,
       flags: [...decision.flags.filter(f=>f!=="daily_cap"),...(actual < Math.min(decision.grossPointsTenths,context.rule.sessionCapTenths)?["daily_cap"]:[])],
     });
@@ -296,15 +300,19 @@ function athleteOf(session: PlayerSession): { injuryStatus: "available" | "limit
 }
 
 export async function scoringContext(db: D1Database) {
-  const club = await db.prepare("SELECT timezone FROM clubs WHERE id = ?").bind(CLUB_ID).first<{ timezone: string }>();
+  const [clubs, periods] = await db.batch([
+    db.prepare("SELECT timezone FROM clubs WHERE id = ?").bind(CLUB_ID),
+    db.prepare(
+      "SELECT start_on, end_on FROM competition_periods WHERE club_id = ? AND kind = 'offseason' AND status = 'active'",
+    ).bind(CLUB_ID),
+  ]);
+  const club = clubs!.results[0] as { timezone: string } | undefined;
+  const period = periods!.results[0] as { start_on: string; end_on: string } | undefined;
   const timeZone = club?.timezone ?? "America/New_York";
   const today = civilDateInTimeZone(new Date(), timeZone);
 
   const selected = await ruleForDate(db, today);
   const rule = selected.rule;
-  const period = await db.prepare(
-    "SELECT start_on, end_on FROM competition_periods WHERE club_id = ? AND kind = 'offseason' AND status = 'active'",
-  ).bind(CLUB_ID).first<{ start_on: string; end_on: string }>();
   const weekday = utcWeekday(today);
   const week = { start: addDays(today, -weekday), end: addDays(today, 6 - weekday) };
   const [year, month] = today.split("-").map(Number);
@@ -550,23 +558,23 @@ async function ownWorkout(db: D1Database, id: string, profileId: string): Promis
   ).bind(id, profileId).first<{ id: string; rule_version_id: string | null; occurred_on: string; scoring_revision: number }>();
 }
 
-async function listOwn(db: D1Database, profileId: string): Promise<WorkoutRow[]> {
+async function listOwn(db: D1Database, profileId: string, workoutId?: string): Promise<WorkoutRow[]> {
   const rows = await db.prepare(
     `SELECT w.id, w.type, COALESCE(json_extract(r.config_json, '$.types.' || w.type || '.label'), replace(w.type,'_',' ')) AS activity_label, w.occurred_on, w.duration_min, w.intensity, w.distance_m, w.notes, w.status, w.review_note, w.created_at,
             COALESCE(SUM(t.points_tenths), 0) AS points_tenths
      FROM workouts w
      LEFT JOIN scoring_rule_versions r ON r.id=w.rule_version_id
      LEFT JOIN point_transactions t ON t.workout_id = w.id
-     WHERE w.player_profile_id = ?
+     WHERE w.player_profile_id = ? ${workoutId ? "AND w.id = ?" : ""}
      GROUP BY w.id, w.type, w.occurred_on, w.duration_min, w.intensity, w.distance_m, w.notes, w.status, w.review_note, w.created_at
      ORDER BY w.occurred_on DESC, w.created_at DESC`,
-  ).bind(profileId).all<WorkoutRow>();
+  ).bind(profileId, ...(workoutId ? [workoutId] : [])).all<WorkoutRow>();
   return rows.results.map(presentWorkout);
 }
 
 async function workoutPayload(db: D1Database, id: string, profileId: string, extra?: { idempotent: boolean }) {
-  const rows = await listOwn(db, profileId);
-  const workout = rows.find((row) => row.id === id) ?? null;
+  const rows = await listOwn(db, profileId, id);
+  const workout = rows[0] ?? null;
   return { workout, idempotent: extra?.idempotent ?? false };
 }
 

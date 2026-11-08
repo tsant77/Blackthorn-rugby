@@ -23,13 +23,22 @@ export function addDays(iso: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+// Reuse immutable formatters across requests; bound the cache for arbitrary club time zones.
+const civilFormatters = new Map<string, Intl.DateTimeFormat>();
+
 export function civilDateInTimeZone(instant: Date, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(instant);
+  let formatter = civilFormatters.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    if (civilFormatters.size >= 16) civilFormatters.delete(civilFormatters.keys().next().value!);
+    civilFormatters.set(timeZone, formatter);
+  }
+  const parts = formatter.formatToParts(instant);
   const year = parts.find((part) => part.type === "year")?.value;
   const month = parts.find((part) => part.type === "month")?.value;
   const day = parts.find((part) => part.type === "day")?.value;

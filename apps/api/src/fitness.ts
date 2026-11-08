@@ -6,7 +6,6 @@ import {
   type ScoringRule,
 } from "@blackthorn/scoring";
 import { clubCatalog } from "@blackthorn/db/catalog";
-import { ruleForDate } from "./scoring-rules";
 
 export function monday(date: string) {
   const day = new Date(date + "T12:00:00Z").getUTCDay();
@@ -23,8 +22,9 @@ export async function consistencyStatements(
 ) {
   const statements: D1PreparedStatement[] = [];
   for (const start of new Set(dates.map(monday))) {
-    const selected = await ruleForDate(db, start);
     const end = addDays(start, 6);
+    // Select the Monday rule and initialize its snapshot in the mutation transaction.
+    // Existing snapshots remain unchanged; pre-first-rule weeks use the earliest version.
     // SQLite's indexed player/date range is at most seven days, irrespective of account history.
     const days = `(SELECT COUNT(*) FROM (SELECT occurred_on FROM workouts WHERE player_profile_id=s.profile_id
       AND occurred_on>='${start}' AND occurred_on<='${end}' AND status IN ('submitted','approved') GROUP BY occurred_on
@@ -35,18 +35,17 @@ export async function consistencyStatements(
     statements.push(
       db
         .prepare(
-          "INSERT OR IGNORE INTO weekly_consistency(id,profile_id,week_start,rule_id,rule_json,points_tenths) VALUES(?,?,?,?,?,0)",
+          `INSERT OR IGNORE INTO weekly_consistency(id,profile_id,week_start,rule_id,rule_json,points_tenths)
+           SELECT ?,?,?,r.id,json_object(
+             'consistency',json(COALESCE(json_extract(r.config_json,'$.consistency'),'[]')),
+             'consistencyMinMinutes',COALESCE(json_extract(r.config_json,'$.consistencyMinMinutes'),20)
+           ),0 FROM scoring_rule_versions r WHERE r.club_id=? AND r.id=COALESCE(
+             (SELECT id FROM scoring_rule_versions WHERE club_id=? AND (effective_on IS NULL OR effective_on<=?)
+              ORDER BY effective_on DESC,version DESC LIMIT 1),
+             (SELECT id FROM scoring_rule_versions WHERE club_id=? ORDER BY version LIMIT 1)
+           )`,
         )
-        .bind(
-          crypto.randomUUID(),
-          profile,
-          start,
-          selected.id,
-          JSON.stringify({
-            consistency: selected.rule.consistency ?? [],
-            consistencyMinMinutes: selected.rule.consistencyMinMinutes ?? 20,
-          }),
-        ),
+        .bind(crypto.randomUUID(), profile, start, clubCatalog.id, clubCatalog.id, start, clubCatalog.id),
       db
         .prepare(
           `UPDATE weekly_consistency AS s SET pending_points_tenths=${target} WHERE s.profile_id=? AND s.week_start=?`,

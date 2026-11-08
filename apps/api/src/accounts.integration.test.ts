@@ -170,4 +170,15 @@ describe("Free-compatible personal player links", () => {
     expect(blocked.status).toBe(429); expect(Number(blocked.headers.get("retry-after"))).toBeGreaterThan(0);
     const rows = await env.DB.prepare("SELECT bucket FROM auth_limits").bind().all(); expect(JSON.stringify(rows.results)).not.toContain("192.0.2.4");
   });
+  it("enforces the exact login limit under concurrent attempts", async () => {
+    const responses = await Promise.all(Array.from({ length: 64 }, () => request(
+      "/api/auth/login", { token: randomToken() }, "", "POST", { "cf-connecting-ip": "192.0.2.77" },
+    )));
+    expect(responses.filter(r => r.status === 401)).toHaveLength(60);
+    expect(responses.filter(r => r.status === 429)).toHaveLength(4);
+    for (const response of responses.filter(r => r.status === 429)) {
+      expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0);
+    }
+  });
+
 });
