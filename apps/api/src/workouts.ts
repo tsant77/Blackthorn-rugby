@@ -183,14 +183,18 @@ export function registerWorkoutRoutes(
     const context = await scoringBasis(c.env.DB);
     const draft = draftFromBody(body, context.today);
     if (!draft) return c.json({ error: "Check the duration, type, and date." }, 400);
-    const selected = await ruleForDate(c.env.DB, draft.workout.occurredOn, owned.rule_version_id ?? undefined);
+    // The stored scoring version and bounded training history are independent reads.
+    const [selected, history] = await Promise.all([
+      ruleForDate(c.env.DB, draft.workout.occurredOn, owned.rule_version_id ?? undefined),
+      loadHistory(c.env.DB, session.profile_id!, draft.workout.occurredOn, owned.id),
+    ]);
     if (selected.effectiveOn && draft.workout.occurredOn < selected.effectiveOn) return c.json({ error: "An edit cannot move a workout before its scoring version. Delete it and log a new workout instead." }, 400);
     context.rule = selected.rule; context.ruleId = selected.id;
     const decision = scoreWorkout({
       workout: { ...draft.workout, clientRequestId: null },
       athlete: athleteOf(session),
       rule: context.rule,
-      history: await loadHistory(c.env.DB, session.profile_id!, draft.workout.occurredOn, owned.id),
+      history,
       now: new Date(),
       timeZone: context.timeZone,
       offseasonStart: context.offseasonStart,
