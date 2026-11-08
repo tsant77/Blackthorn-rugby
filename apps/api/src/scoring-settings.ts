@@ -48,16 +48,16 @@ export function registerScoringSettings(
     const [context, rows] = await Promise.all([
       scoringBasis(c.env.DB),
       c.env.DB.prepare(
-      "SELECT id,version,effective_on,config_json,notes,created_at FROM scoring_rule_versions WHERE club_id=? ORDER BY version DESC",
-    )
-      .bind(clubCatalog.id)
-      .all<{
-        id: string;
-        version: number;
-        effective_on: string | null;
-        config_json: string;
-        notes: string | null;
-      }>(),
+        "SELECT id,version,effective_on,config_json,notes,created_at FROM scoring_rule_versions WHERE club_id=? ORDER BY version DESC",
+      )
+        .bind(clubCatalog.id)
+        .all<{
+          id: string;
+          version: number;
+          effective_on: string | null;
+          config_json: string;
+          notes: string | null;
+        }>(),
     ]);
     return c.json({
       today: context.today,
