@@ -2,7 +2,8 @@ import type { Context, Hono } from "hono";
 import { clubCatalog } from "@blackthorn/db/catalog";
 import { civilDateInTimeZone, isRealCivilDate } from "@blackthorn/scoring";
 import type { Env } from "./app";
-import { syncBadges } from "./badges";
+import { parseCriteria } from "./awards";
+import { loadStats, syncBadges } from "./badges";
 import { challengeStandings, displayValue, isComplete, measure, parseRule, type ChallengeMetric, type ChallengeRule } from "./challenge-math";
 import { loadProgress, transitionChallenges } from "./jobs";
 
@@ -25,13 +26,23 @@ export function registerEngageRoutes(
     if (!session) return c.json({ error: "Sign in required." }, 401);
     if (session.profile_id) await syncBadges(c.env, session.profile_id);
     const rows = await c.env.DB.prepare(
-      `SELECT a.key, a.name, a.description, pa.awarded_at
+      `SELECT a.key, a.name, a.description, a.criteria_json, pa.awarded_at
        FROM achievements a
        LEFT JOIN player_achievements pa ON pa.achievement_id = a.id AND pa.player_profile_id = ?
        WHERE a.club_id = ?
        ORDER BY a.name`,
-    ).bind(session.profile_id, CLUB_ID).all();
-    return c.json({ badges: rows.results });
+    ).bind(session.profile_id, CLUB_ID).all<{ key: string; name: string; description: string; criteria_json: string; awarded_at: number | null }>();
+    const stats = session.profile_id ? await loadStats(c.env.DB, session.profile_id) : null;
+    const badges = rows.results.map(({ criteria_json, ...badge }) => {
+      const criteria = parseCriteria(criteria_json);
+      let current = 0, target = 1, unit = "sessions";
+      if (criteria?.kind === "points") { current = (stats?.pointsTenths ?? 0) / 10; target = criteria.tenths / 10; unit = "PTS"; }
+      if (criteria?.kind === "streak") { current = stats?.streakDays ?? 0; target = criteria.days; unit = "days"; }
+      if (criteria?.kind === "sessions") { current = stats?.sessionCount ?? 0; target = criteria.count; }
+      if (criteria?.kind === "variety") { current = stats?.activityTypes ?? 0; target = criteria.types; unit = "activities"; }
+      return { ...badge, progress: { current: Math.max(0, current), target, unit } };
+    });
+    return c.json({ badges });
   });
 
   app.get("/api/notifications", async (c) => {

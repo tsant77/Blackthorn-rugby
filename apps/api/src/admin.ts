@@ -179,9 +179,15 @@ export function registerAdminRoutes(
       if ((admins?.n ?? 0) <= 1) return c.json({ error: "The club needs one active admin." }, 409);
     }
     const now = Date.now();
-    await c.env.DB.prepare(
-      "UPDATE club_memberships SET role = ?, status = ?, updated_at = ? WHERE id = ?",
-    ).bind(nextRole, nextStatus, now, member.id).run();
+    await c.env.DB.batch([
+      c.env.DB.prepare("UPDATE club_memberships SET role=?,status=?,updated_at=? WHERE id=?")
+        .bind(nextRole, nextStatus, now, member.id),
+      ...(nextStatus === "deactivated" ? [
+        c.env.DB.prepare("UPDATE sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL").bind(now, member.user_id),
+        c.env.DB.prepare("UPDATE access_links SET enabled=0 WHERE user_id=? AND kind='signin'").bind(member.user_id),
+        c.env.DB.prepare("UPDATE password_resets SET consumed_at=? WHERE user_id=? AND consumed_at IS NULL").bind(now, member.user_id),
+      ] : []),
+    ]);
     await runAudit(c.env.DB, session.user_id, "member_updated", "club_membership", member.id, member, { role: nextRole, status: nextStatus }, now);
     return c.json({ ok: true });
   });

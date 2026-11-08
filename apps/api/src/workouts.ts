@@ -53,7 +53,7 @@ export function registerWorkoutRoutes(
     if (!session.profile_id) return c.json({ error: "Finish onboarding first." }, 409);
     const context = await scoringContext(c.env.DB);
     const workouts = await listOwn(c.env.DB, session.profile_id);
-    return c.json({ today: context.today, minDate: context.minDate, workouts });
+    return c.json({ today: context.today, minDate: context.minDate, workouts, estimateRule: context.rule });
   });
 
   app.post("/api/workouts", async (c) => {

@@ -52,7 +52,7 @@ export async function syncBadges(env: Env, profileId: string, now = Date.now()):
   return fresh;
 }
 
-async function loadStats(db: D1Database, profileId: string): Promise<AthleteStats> {
+export async function loadStats(db: D1Database, profileId: string): Promise<AthleteStats> {
   const counts = await db.prepare(
     `SELECT COUNT(*) AS sessions, COUNT(DISTINCT type) AS types
      FROM workouts WHERE player_profile_id = ? AND status IN ('submitted', 'approved')`,
