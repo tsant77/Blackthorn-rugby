@@ -9,7 +9,7 @@ import {
 } from "@blackthorn/scoring";
 import { clubCatalog } from "@blackthorn/db/catalog";
 import type { Env } from "./app";
-import { scoringContext } from "./workouts";
+import { scoringBasis } from "./workouts";
 
 type C = Context<{ Bindings: Env }>;
 type Actor = { user_id: string; role: string };
@@ -43,18 +43,22 @@ export function registerScoringSettings(
     const actor = await session(c);
     if (!actor) return c.json({ error: "Sign in required." }, 401);
     if (actor.role !== "admin") return c.json({ error: "Admins only." }, 403);
-    const context = await scoringContext(c.env.DB);
-    const rows = await c.env.DB.prepare(
-      "SELECT id,version,effective_on,config_json,notes,created_at FROM scoring_rule_versions WHERE club_id=? ORDER BY version DESC",
-    )
-      .bind(clubCatalog.id)
-      .all<{
-        id: string;
-        version: number;
-        effective_on: string | null;
-        config_json: string;
-        notes: string | null;
-      }>();
+    // The settings screen needs the active rule and today's date, not leaderboard
+    // week/month boundaries. Fetch independent data without serial D1 waits.
+    const [context, rows] = await Promise.all([
+      scoringBasis(c.env.DB),
+      c.env.DB.prepare(
+        "SELECT id,version,effective_on,config_json,notes,created_at FROM scoring_rule_versions WHERE club_id=? ORDER BY version DESC",
+      )
+        .bind(clubCatalog.id)
+        .all<{
+          id: string;
+          version: number;
+          effective_on: string | null;
+          config_json: string;
+          notes: string | null;
+        }>(),
+    ]);
     return c.json({
       today: context.today,
       currentId: context.ruleId,
@@ -113,7 +117,7 @@ export function registerScoringSettings(
 export async function publishScoringRule(c: C, actor: string) {
   const body = await read(c);
   if (!body) return c.json({ error: "Invalid settings." }, 400);
-  const context = await scoringContext(c.env.DB);
+  const context = await scoringBasis(c.env.DB);
   const latest = await c.env.DB.prepare(
     "SELECT MAX(version) AS version FROM scoring_rule_versions WHERE club_id=?",
   )
