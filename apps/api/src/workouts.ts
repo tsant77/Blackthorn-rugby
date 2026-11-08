@@ -296,15 +296,19 @@ function athleteOf(session: PlayerSession): { injuryStatus: "available" | "limit
 }
 
 export async function scoringContext(db: D1Database) {
-  const club = await db.prepare("SELECT timezone FROM clubs WHERE id = ?").bind(CLUB_ID).first<{ timezone: string }>();
+  const [clubs, periods] = await db.batch([
+    db.prepare("SELECT timezone FROM clubs WHERE id = ?").bind(CLUB_ID),
+    db.prepare(
+      "SELECT start_on, end_on FROM competition_periods WHERE club_id = ? AND kind = 'offseason' AND status = 'active'",
+    ).bind(CLUB_ID),
+  ]);
+  const club = clubs!.results[0] as { timezone: string } | undefined;
+  const period = periods!.results[0] as { start_on: string; end_on: string } | undefined;
   const timeZone = club?.timezone ?? "America/New_York";
   const today = civilDateInTimeZone(new Date(), timeZone);
 
   const selected = await ruleForDate(db, today);
   const rule = selected.rule;
-  const period = await db.prepare(
-    "SELECT start_on, end_on FROM competition_periods WHERE club_id = ? AND kind = 'offseason' AND status = 'active'",
-  ).bind(CLUB_ID).first<{ start_on: string; end_on: string }>();
   const weekday = utcWeekday(today);
   const week = { start: addDays(today, -weekday), end: addDays(today, 6 - weekday) };
   const [year, month] = today.split("-").map(Number);
