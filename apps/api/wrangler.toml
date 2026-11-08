@@ -3,6 +3,7 @@ name = "blackthorn-rugby"
 main = "src/index.ts"
 compatibility_date = "2026-11-08"
 upload_source_maps = true
+workers_dev = true
 
 [observability]
 enabled = true
@@ -22,18 +23,48 @@ migrations_dir = "../../packages/db/migrations"
 directory = "../web/dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = [ "/api/*", "/auth/*", "/health" ]
+run_worker_first = [ "/api/*", "/auth/*", "/health", "/link", "/link/*" ]
 
-# Production email. Leave EMAIL_PROVIDER unset (or set it to cloudflare) after the
-# sending domain is onboarded. Do not set remote = true here; that would send real
-# mail from local development. Local tests use EMAIL_PROVIDER=console instead.
+# Optional email. Launch uses EMAIL_PROVIDER=none, so this binding is idle.
+# Do not set remote = true. That would send real mail from local development.
 [[send_email]]
 name = "EMAIL"
 
 # Photos are out of scope this offseason. Do not add an R2 binding.
 
-# Daily job at 12:00 UTC (07:00 EST / 08:00 EDT). It opens and closes challenges and,
-# on Mondays, sends the previous week's recap. Leave this commented until the owner
-# deploys. The handler is in src/index.ts. See docs/DEPLOYMENT.md.
-# [triggers]
-# crons = ["0 12 * * *"]
+# `npx wrangler deploy` is production. `npx wrangler deploy --env dev` is a
+# separate dress-rehearsal worker. Env blocks do not inherit the top-level
+# bindings, so the dev block repeats them. Replace its database_id after
+# `wrangler d1 create blackthorn-rugby-dev`. Do not commit a real id.
+
+[env.dev]
+name = "blackthorn-rugby-dev"
+main = "src/index.ts"
+compatibility_date = "2026-11-08"
+workers_dev = true
+
+[env.dev.observability]
+enabled = true
+
+[env.dev.assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = [ "/api/*", "/auth/*", "/health", "/link", "/link/*" ]
+
+[[env.dev.d1_databases]]
+binding = "DB"
+database_name = "blackthorn-rugby-dev"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "../../packages/db/migrations"
+
+[[env.dev.send_email]]
+name = "EMAIL"
+
+[env.dev.triggers]
+crons = ["0 12 * * *"]
+
+# Daily 12:00 UTC (07:00 EST / 08:00 EDT): challenge notices, and the Monday recap.
+# Enabled for the operator's deploy. This repository does not run wrangler deploy.
+[triggers]
+crons = ["0 12 * * *"]

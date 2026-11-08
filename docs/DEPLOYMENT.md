@@ -1,93 +1,142 @@
 # Deployment
 
-Not done in this phase, and not done by CI. The owner deploys from their own Cloudflare account. Do not commit account ids, API tokens, or passwords.
+An operator runs these steps with their own Cloudflare API token. This repository does not deploy, and it does not contain a token, an account id, or a database id.
 
-## What is already in the repo
+The club has no mail domain. Launch on the account's `workers.dev` hostname. Email stays off.
 
-- Worker config: `apps/api/wrangler.toml` (`name = "blackthorn-rugby"`, binding `DB`).
-- Migrations: `packages/db/migrations`.
-- Placeholder `database_id` of `00000000-0000-0000-0000-000000000000`. Replace it. Do not deploy against that value.
+## What you need
 
-## First production database
+- Node.js 22 or newer
+- A Cloudflare account
+- An API token with Workers Scripts edit, D1 edit, and Workers Tail read. Create it in the Cloudflare dashboard. Do not commit it.
 
-From `apps/api`, after `npx wrangler login` with the owner's account:
+Export it only in the operator's shell:
 
 ```bash
+export CLOUDFLARE_API_TOKEN="paste-the-token-here"
+```
+
+## 1. Install and check
+
+From the repo root:
+
+```bash
+npm install
+npm test
+npm run typecheck
+npm run build
+```
+
+## 2. Create the database
+
+```bash
+cd apps/api
 npx wrangler d1 create blackthorn-rugby
 ```
 
-Copy the returned `database_id` into `wrangler.toml`. Then:
+Copy the printed `database_id` into `apps/api/wrangler.toml`, replacing `00000000-0000-0000-0000-000000000000`. Do not commit a real id if this repo is public; the operator can keep that change locally or in a private fork.
+
+## 3. Apply migrations
+
+From `apps/api`:
 
 ```bash
 npx wrangler d1 migrations apply blackthorn-rugby --remote
-```
-
-That applies both the generated schema and `0001_append_only.sql`.
-
-Confirm the migration list:
-
-```bash
 npx wrangler d1 migrations list blackthorn-rugby --remote
 ```
 
-## Secrets and email
+That applies every file in `packages/db/migrations`, including the append-only ledger triggers and the club seed. It does not create people.
 
-There is no password and no shared team code. Copy `apps/api/.dev.vars.example` to `apps/api/.dev.vars` for local development. That file is gitignored.
-
-Production secrets and vars, from `apps/api`:
+Take a backup before any later migration that rewrites rows:
 
 ```bash
-npx wrangler secret put BOOTSTRAP_ADMIN_EMAIL
+npx wrangler d1 export blackthorn-rugby --remote --output "$HOME/blackthorn-rugby.sql"
 ```
 
-Set these as Wrangler vars (they are not secret, but they are environment-specific):
+Keep that file outside git.
 
-- `APP_ORIGIN` — public https origin, no trailing slash. Magic links are built from it.
-- `EMAIL_FROM` — address on a domain onboarded to Cloudflare Email Service, for example `noreply@blackthornrugbyclub.com`.
-- `EMAIL_PROVIDER` — omit it, or set `cloudflare`. Do not set `console` on the deployed worker. `console` stores message bodies in `dev_mailbox` and exposes `GET /api/dev/mailbox` so local tests can read links.
+## 4. Configure the Worker
 
-Email setup the owner must do once:
+Generate a long random setup token locally. Do not put it in a file in the repo.
 
-1. Onboard the sending domain in Cloudflare Email Service (SPF and DKIM). The Workers binding is `EMAIL` (`send_email` in `wrangler.toml`).
-2. Set `EMAIL_FROM` to an address on that domain.
-3. Set `BOOTSTRAP_ADMIN_EMAIL` to the first admin. Request a magic link for that address before anyone else is an admin. Later requests for that address are ordinary sign-ins.
-4. Leave `remote` off the email binding in config. Turning on remote bindings during `wrangler dev` sends real mail.
+```bash
+npx wrangler secret put BOOTSTRAP_TOKEN
+```
 
-Local `wrangler dev` with `EMAIL_PROVIDER=console` does not send mail. It logs a subject line and stores the body in D1 for the dev mailbox route.
+The workers.dev hostname is assigned by Cloudflare as `https://blackthorn-rugby.<account-subdomain>.workers.dev`. After the first deploy you can read it from the dashboard or `npx wrangler deployments status`. Set the public origin to that URL with no trailing slash:
 
-Photos are out of scope. There is no R2 binding.
+```bash
+npx wrangler secret put APP_ORIGIN
+```
 
-## Scheduled job
-
-`src/index.ts` exports a `scheduled` handler. Once a day it publishes challenge start and end notices, archives a challenge the day after it ends, and on Monday sends each player last week's points. Email goes out only when that person opted in. The default is in-app only.
-
-The cron is written in `apps/api/wrangler.toml` and left commented so a deploy does not start it by surprise. Uncomment it when the owner wants the job:
+`APP_ORIGIN` is not really a secret, but a secret keeps it out of git. You can instead add it under `[vars]` in a private copy of `wrangler.toml`:
 
 ```toml
-[triggers]
-crons = ["0 12 * * *"]
+[vars]
+APP_ORIGIN = "https://blackthorn-rugby.<account-subdomain>.workers.dev"
+EMAIL_PROVIDER = "none"
 ```
 
-12:00 UTC is 07:00 EST and 08:00 EDT. Opening the challenges page also applies start and end transitions, so a missed cron still catches up the next time someone looks. The weekly recap waits for the cron.
+`EMAIL_PROVIDER=none` is the launch default. Leave `EMAIL_FROM` unset. Do not set `EMAIL_PROVIDER` to `console` on the deployed worker. `console` stores message bodies and exposes `GET /api/dev/mailbox`.
 
-## Deploy and rollback
+Optional later, only after a sending domain exists:
+
+```bash
+npx wrangler secret put EMAIL_FROM
+```
+
+Then set `EMAIL_PROVIDER` to `cloudflare`. The `EMAIL` binding is already named in `wrangler.toml`. Do not set `remote = true` on that binding.
+
+A second worker for a dress rehearsal uses `[env.dev]` and does not inherit the top-level bindings. Create `blackthorn-rugby-dev` with `wrangler d1 create`, put that id in the env block, then:
+
+```bash
+npx wrangler deploy --env dev
+```
+
+Production is the top-level config: `npx wrangler deploy`.
+
+## 5. Deploy
+
+From `apps/api`:
 
 ```bash
 npx wrangler deploy
+```
+
+The cron `0 12 * * *` is enabled. That is 07:00 EST / 08:00 EDT. It sends challenge start and end notices and, on Mondays, the weekly recap. Recap email is sent only when a person has opted in. With email off, the recap is in-app only.
+
+Confirm:
+
+```bash
+npx wrangler deployments status
+npx wrangler tail
+```
+
+`tail` streams the Worker logs. Observability logs and traces are already enabled in `wrangler.toml`.
+
+## 6. Create the first admin
+
+Open `https://blackthorn-rugby.<account-subdomain>.workers.dev/setup`.
+
+Enter `BOOTSTRAP_TOKEN` and a name. That creates the admin session and disables setup. A second visit fails even if the secret is still set.
+
+Then delete the secret:
+
+```bash
+npx wrangler secret delete BOOTSTRAP_TOKEN
+```
+
+The admin creates invite links in the app and copies them into a text or the team chat.
+
+## 7. Rollback
+
+```bash
 npx wrangler rollback
 ```
 
-Rollback restores the previous Worker version. It does not roll back D1 rows. Take a backup before a destructive migration.
+Rollback restores the previous Worker version. It does not roll back D1. Export the database first if a migration is destructive.
 
-## Backups
-
-```bash
-npx wrangler d1 export blackthorn-rugby --remote --output blackthorn-rugby.sql
-```
-
-Keep that file outside the git repository. Export before applying a migration that rewrites data. The Phase 1 migration only creates empty tables.
-
-## Local
+## Local development
 
 ```bash
 npm install
@@ -96,15 +145,15 @@ npm run dev --workspace @blackthorn/web
 npm run dev --workspace @blackthorn/api
 ```
 
-Apply migrations locally with:
+Copy `apps/api/.dev.vars.example` to `apps/api/.dev.vars` (gitignored). For local email capture set `EMAIL_PROVIDER=console`. For the launch path set `EMAIL_PROVIDER=none` and `BOOTSTRAP_TOKEN` to any local string.
+
+Apply migrations locally from `apps/api`:
 
 ```bash
 npx wrangler d1 migrations apply blackthorn-rugby --local
 ```
 
-Run that from `apps/api` so Wrangler finds the config.
-
-## Generating the next migration
+## Next migration
 
 Edit `packages/db/src/schema.ts`, then from the repo root:
 
@@ -112,4 +161,11 @@ Edit `packages/db/src/schema.ts`, then from the repo root:
 npm run db:generate
 ```
 
-Commit the new SQL and the Drizzle snapshot. Do not regenerate `0000` by hand. Leave `0001_append_only.sql` in place.
+Commit the SQL and the Drizzle snapshot. Do not regenerate `0000` by hand. Leave `0001_append_only.sql` in place.
+
+## Backups and export
+
+- Database: `npx wrangler d1 export blackthorn-rugby --remote --output "$HOME/blackthorn-rugby.sql"`
+- Workouts and points: a coach or admin downloads CSV from Scoring (`GET /api/export/workouts.csv`) while signed in.
+
+Photos are out of scope. There is no R2 binding.

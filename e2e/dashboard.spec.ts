@@ -1,15 +1,14 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
+import { useAdmin } from "./account";
 
 const shots = "docs/screenshots/phase-4";
 
 test("coach logs and opens the dashboard", async ({ page }) => {
   await mkdir(shots, { recursive: true });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/login");
-  await page.getByLabel("Email").fill("coach@blackthorn.test");
-  await page.getByRole("button", { name: "Email me a link" }).click();
-  await page.goto(await latestLink(page, "coach@blackthorn.test"));
+  await useAdmin(page);
+  await page.goto("/");
   await page.getByRole("link", { name: "Set up a training profile" }).click();
   await page.getByLabel("Roster name").fill("Coach Kim");
   await page.getByLabel("Position").selectOption({ label: "No position" });
@@ -39,10 +38,3 @@ test("coach logs and opens the dashboard", async ({ page }) => {
   await page.screenshot({ path: `${shots}/coaches-board-desktop.png` });
 });
 
-async function latestLink(page: Page, email: string): Promise<string> {
-  const response = await page.request.get(`/api/dev/mailbox?to=${encodeURIComponent(email)}`);
-  const body = await response.json() as { messages: { text_body: string }[] };
-  const match = body.messages[0]?.text_body.match(/https?:\/\/\S+/);
-  if (!match?.[0]) throw new Error(`No link for ${email}`);
-  return match[0];
-}

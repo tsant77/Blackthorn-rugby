@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api";
+import { ShareLink } from "../components/ShareLink";
 import { useSession } from "../session";
 
 export function ProfilePage() {
@@ -12,9 +13,12 @@ export function ProfilePage() {
   const [error, setError] = useState<string | null>(null);
   const [badges, setBadges] = useState<{ key: string; name: string; description: string; awarded_at: number | null }[]>([]);
   const [emailOn, setEmailOn] = useState(me?.user.emailNotifications ?? false);
+  const [emailEnabled, setEmailEnabled] = useState(false);
+  const [deviceUrl, setDeviceUrl] = useState<string | null>(null);
 
   useEffect(() => {
     setEmailOn(me?.user.emailNotifications ?? false);
+    void api<{ emailEnabled: boolean }>("/api/auth/options").then((body) => setEmailEnabled(body.emailEnabled)).catch(() => setEmailEnabled(false));
     if (!me?.profile) return;
     setInjuryStatus(me.profile.injuryStatus);
     setInjuryNote(me.profile.injuryNote ?? "");
@@ -91,6 +95,19 @@ export function ProfilePage() {
           </button>
         </section>
       ) : null}
+      <section className="flex flex-col gap-s2 rounded-md border border-line bg-raised p-s2">
+        <h2 className="font-heading font-semibold">Another device</h2>
+        <p className="text-sm text-quiet">This link works once and expires in 15 minutes. Scan the code or copy it onto the other device.</p>
+        <button
+          type="button"
+          className="w-fit rounded-md border border-line px-s2 py-s1 font-heading font-semibold"
+          onClick={() => void api<{ url: string }>("/api/signin-links", { method: "POST", body: JSON.stringify({}) }).then((body) => setDeviceUrl(body.url))}
+        >
+          Create a sign-in link
+        </button>
+        {deviceUrl ? <ShareLink url={deviceUrl} label="Device sign-in link" /> : null}
+      </section>
+      {emailEnabled ? (
       <label className="flex items-center gap-s2 text-sm">
         <input
           type="checkbox"
@@ -103,6 +120,7 @@ export function ProfilePage() {
         />
         Email me notifications. Off by default. In-app notices stay on.
       </label>
+      ) : null}
       <button type="button" onClick={() => void logout()} className="w-fit text-quiet underline">
         Sign out
       </button>

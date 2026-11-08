@@ -23,7 +23,8 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 export interface Me {
   user: { id: string; email: string; name: string; emailNotifications: boolean };
-  membership: { id: string; role: "player" | "coach" | "admin"; clubId: string };
+  membership: { id: string; role: "player" | "coach" | "admin"; clubId: string; status?: string };
+  pendingApproval?: boolean;
   profile: {
     id: string;
     rosterName: string;

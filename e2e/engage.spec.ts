@@ -1,15 +1,14 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
+import { invitePlayer, useAdmin } from "./account";
 
 const shots = "docs/screenshots/phase-6";
 
 test("a badge, a challenge, and a void notice", async ({ page }) => {
   await mkdir(shots, { recursive: true });
-  await signIn(page, "coach@blackthorn.test");
-  await page.getByRole("link", { name: "Invite a player" }).click();
-  await page.getByLabel("Email").fill("badged@blackthorn.test");
-  await page.getByRole("button", { name: "Send invite" }).click();
-  await page.goto(await latestLink(page, "badged@blackthorn.test"));
+  await useAdmin(page);
+  const link = await invitePlayer(page, "Test Player");
+  await page.goto(link);
   await page.getByLabel("Roster name").fill("Test Player");
   await page.getByLabel("Position").selectOption({ label: "Fullback" });
   await page.getByRole("button", { name: "Save profile" }).click();
@@ -24,8 +23,9 @@ test("a badge, a challenge, and a void notice", async ({ page }) => {
   await expect(page.getByText("Earned · Log the first workout that counts.")).toBeVisible();
   await page.screenshot({ path: `${shots}/badges-mobile.png` });
 
-  await signOut(page);
-  await signIn(page, "coach@blackthorn.test");
+  await useAdmin(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/");
   await page.getByRole("link", { name: "Challenges", exact: true }).click();
   await expect(page.getByLabel("Starts")).not.toHaveValue("");
   await page.getByLabel("Title").fill("November sessions");
@@ -40,35 +40,17 @@ test("a badge, a challenge, and a void notice", async ({ page }) => {
   await page.locator("li").filter({ hasText: "Test Player" }).filter({ hasText: "submitted" }).first().getByRole("button", { name: "Void" }).click();
   await expect(page.getByText("voided")).toBeVisible();
 
-  await signOut(page);
+  const roster = await page.request.get("/api/members");
+  const members = (await roster.json()) as { members: { user_id: string; roster_name: string | null }[] };
+  const player = members.members.find((member) => member.roster_name === "Test Player");
+  const playerLink = await page.request.post("/api/signin-links", { data: { userId: player?.user_id } });
+  const playerUrl = ((await playerLink.json()) as { url: string }).url;
+  await page.context().clearCookies();
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByLabel("Email").fill("badged@blackthorn.test");
-  await page.getByRole("button", { name: "Email me a link" }).click();
-  await page.goto(await latestLink(page, "badged@blackthorn.test"));
+  await page.goto(playerUrl);
   await page.getByRole("link", { name: "Inbox", exact: true }).click();
   await expect(page.getByText("logged by mistake")).toBeVisible();
   await expect(page.getByText("Logged twice")).toBeVisible();
   await page.screenshot({ path: `${shots}/inbox-mobile.png`, fullPage: true });
 });
 
-async function signOut(page: Page) {
-  await page.request.post("/api/auth/logout");
-  await page.goto("/login");
-  await expect(page.getByLabel("Email")).toBeVisible();
-}
-
-async function signIn(page: Page, email: string) {
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(email);
-  await page.getByRole("button", { name: "Email me a link" }).click();
-  await page.goto(await latestLink(page, email));
-}
-
-async function latestLink(page: Page, email: string): Promise<string> {
-  const response = await page.request.get(`/api/dev/mailbox?to=${encodeURIComponent(email)}`);
-  const body = await response.json() as { messages: { text_body: string }[] };
-  const match = body.messages[0]?.text_body.match(/https?:\/\/\S+/);
-  if (!match?.[0]) throw new Error(`No link for ${email}`);
-  return match[0];
-}

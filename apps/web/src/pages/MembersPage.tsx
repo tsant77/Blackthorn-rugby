@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { api, ApiError, type RosterPosition } from "../api";
+import { ShareLink } from "../components/ShareLink";
 import { useSession } from "../session";
 
 interface Member {
   membership_id: string;
   role: string;
   status: string;
+  user_id: string;
+  user_status: string;
   email: string;
   name: string;
   profile_id: string | null;
@@ -30,6 +33,7 @@ export function MembersPage() {
   const [invitations, setInvitations] = useState<Invite[]>([]);
   const [positions, setPositions] = useState<RosterPosition[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [signInUrl, setSignInUrl] = useState<string | null>(null);
 
   async function load() {
     const body = await api<{ members: Member[]; invitations: Invite[] }>("/api/members");
@@ -42,7 +46,7 @@ export function MembersPage() {
     void api<{ positions: RosterPosition[] }>("/api/roster-options").then((body) => setPositions(body.positions));
   }, []);
 
-  async function updateMember(id: string, patch: { role?: string; status?: string }) {
+  async function updateMember(id: string, patch: { role?: string; status?: string; approve?: boolean }) {
     setError(null);
     try {
       await api(`/api/members/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
@@ -66,11 +70,22 @@ export function MembersPage() {
     <main className="mx-auto flex max-w-lg flex-col gap-s3 px-s2 py-s4">
       <h1 className="font-heading text-2xl font-semibold">Members</h1>
       {error ? <p role="alert" className="text-gold-soft">{error}</p> : null}
+      {signInUrl ? <ShareLink url={signInUrl} label="One-time sign-in link" /> : null}
       <ul className="flex flex-col gap-s2">
         {members.map((member) => (
           <li key={member.membership_id} className="rounded-md border border-line bg-raised p-s2">
             <p className="font-heading font-semibold">{member.roster_name ?? member.name}</p>
-            <p className="text-sm text-quiet">{member.email} · {member.role} · {member.status}</p>
+            <p className="text-sm text-quiet">{member.email.endsWith("@members.invalid") ? "Link account" : member.email} · {member.role} · {member.user_status === "invited" ? "pending" : member.status}</p>
+            {member.user_status === "invited" && admin ? (
+              <button type="button" className="text-sm text-sage" onClick={() => void updateMember(member.membership_id, { approve: true })}>Approve</button>
+            ) : null}
+            <button
+              type="button"
+              className="text-sm text-sage"
+              onClick={() => void api<{ url: string }>("/api/signin-links", { method: "POST", body: JSON.stringify({ userId: member.user_id }) }).then((body) => setSignInUrl(body.url)).catch((caught: unknown) => setError(caught instanceof ApiError ? caught.message : "Could not create a sign-in link."))}
+            >
+              Sign-in link
+            </button>
             {admin ? (
               <div className="mt-s1 flex flex-wrap items-end gap-s2">
                 <label className="flex flex-col gap-s1 text-sm text-quiet">

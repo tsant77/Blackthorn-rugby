@@ -15,6 +15,8 @@ import { ModeratePage } from "./pages/ModeratePage";
 import { RulesPage } from "./pages/RulesPage";
 import { TeamPage } from "./pages/TeamPage";
 import { LoginPage } from "./pages/LoginPage";
+import { PendingPage } from "./pages/PendingPage";
+import { SetupPage } from "./pages/SetupPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { SquadPage } from "./pages/SquadPage";
@@ -26,6 +28,7 @@ export function App() {
       <SessionProvider>
         <Routes>
           <Route path="/login" element={<GuestOnly><LoginPage /></GuestOnly>} />
+          <Route path="/setup" element={<SetupPage />} />
           <Route path="/design" element={<DesignPage />} />
           <Route element={<RequireSession />}>
             <Route element={<Shell />}>
@@ -43,6 +46,7 @@ export function App() {
               <Route path="/invite" element={<InvitePage />} />
               <Route path="/squad" element={<SquadPage />} />
               <Route path="/onboarding" element={<OnboardingPage />} />
+              <Route path="/pending" element={<PendingPage />} />
             </Route>
           </Route>
         </Routes>
@@ -54,6 +58,7 @@ export function App() {
 function GuestOnly({ children }: { children: ReactNode }) {
   const { me, loading } = useSession();
   if (loading) return <LoadingScreen />;
+  if (me?.pendingApproval) return <Navigate to="/pending" replace />;
   if (me?.needsOnboarding) return <Navigate to="/onboarding" replace />;
   if (me) return <Navigate to="/" replace />;
   return children;
@@ -66,6 +71,8 @@ function RequireSession() {
   if (!me) return <Navigate to="/login" replace />;
   if (error) return <EmptyState title="Could not load your session" body={error} />;
   const staff = me.membership.role === "coach" || me.membership.role === "admin";
+  if (me.pendingApproval && location.pathname !== "/pending") return <Navigate to="/pending" replace />;
+  if (!me.pendingApproval && location.pathname === "/pending") return <Navigate to="/" replace />;
   if (me.needsOnboarding && location.pathname !== "/onboarding") return <Navigate to="/onboarding" replace />;
   if (!me.needsOnboarding && location.pathname === "/onboarding" && !(staff && !me.profile)) return <Navigate to="/" replace />;
   return <Outlet />;

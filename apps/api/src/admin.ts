@@ -101,7 +101,7 @@ export function registerAdminRoutes(
     const session = await requireStaff(c, currentSession);
     if (session instanceof Response) return session;
     const members = await c.env.DB.prepare(
-      `SELECT m.id AS membership_id, m.role, m.status, u.id AS user_id, u.email, u.name,
+      `SELECT m.id AS membership_id, m.role, m.status, u.id AS user_id, u.email, u.name, u.status AS user_status,
               pr.id AS profile_id, pr.roster_name, pr.position_id, pr.group_id, pr.injury_status, pr.injury_note,
               pos.name AS position_name, g.name AS group_name
        FROM club_memberships m
@@ -166,6 +166,12 @@ export function registerAdminRoutes(
     if (!member) return c.json({ error: "Member not found." }, 404);
     const nextRole = typeof role === "string" ? role : member.role;
     const nextStatus = typeof status === "string" ? status : member.status;
+    if (body?.approve === true) {
+      const now = Date.now();
+      await c.env.DB.prepare("UPDATE users SET status = 'active', updated_at = ? WHERE id = ?").bind(now, member.user_id).run();
+      await runAudit(c.env.DB, session.user_id, "member_approved", "club_membership", member.id, null, { userId: member.user_id }, now);
+      return c.json({ ok: true });
+    }
     if ((member.role === "admin" && member.status === "active") && (nextRole !== "admin" || nextStatus !== "active")) {
       const admins = await c.env.DB.prepare(
         "SELECT COUNT(*) AS n FROM club_memberships WHERE club_id = ? AND role = 'admin' AND status = 'active'",

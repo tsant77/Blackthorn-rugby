@@ -77,6 +77,7 @@ export function optedIn(value: number | boolean | null): boolean {
 }
 
 function providerFor(env: Env): EmailProvider | null {
+  if (!env.EMAIL_PROVIDER || env.EMAIL_PROVIDER === "none") return null;
   if (env.EMAIL_PROVIDER === "console") return consoleEmailProvider(env.DB);
   if (!env.EMAIL || !env.EMAIL_FROM) return null;
   return cloudflareEmailProvider(env.EMAIL, env.EMAIL_FROM);

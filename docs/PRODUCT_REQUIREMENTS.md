@@ -1,6 +1,6 @@
 # Product requirements
 
-Status: Phase 6 of 7. Owner decisions are in `docs/DECISIONS.md`. Badges, challenges, and notifications are in. Production hardening is still later.
+Status: Phase 7 of 7. Owner decisions are in `docs/DECISIONS.md`. Sign-in is a shared link. Email is optional. The production review is in this phase.
 
 Product: Rugby Offseason Performance Platform for Blackthorn Rugby Club (Horsham, PA).
 
@@ -29,8 +29,8 @@ The schema is multi-club. Version 1 is operated as one club. Youth and senior si
 | 3 | Workout logging wired to the scoring engine | Done |
 | 4 | Dashboards, leaderboards, analytics | Done |
 | 5 | Coach and admin tools, export, moderation | Done |
-| 6 | Challenges, achievements, notifications | This phase |
-| 7 | Security, accessibility, and production readiness review | Not started |
+| 6 | Challenges, achievements, notifications | Done |
+| 7 | Security, accessibility, and production readiness review | This phase |
 
 ## Functional requirements
 

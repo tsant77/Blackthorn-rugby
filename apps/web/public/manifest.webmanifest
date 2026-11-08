@@ -1,7 +1,9 @@
 {
   "name": "Blackthorn Rugby Offseason",
   "short_name": "Blackthorn",
+  "id": "/",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#121410",
   "theme_color": "#121410",

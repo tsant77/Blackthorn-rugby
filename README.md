@@ -1,6 +1,6 @@
 # Blackthorn Rugby — Offseason Performance Platform
 
-Phase 6 of 7 for Blackthorn Rugby Club. Players earn badges, coaches publish challenges, and the inbox keeps review decisions, challenge notices, and the weekly recap. The ledger stays append-only.
+Phase 7 of 7 for Blackthorn Rugby Club. Sign-in is a link the club shares. Email is optional and off at launch. The operator deploy steps are in `docs/DEPLOYMENT.md`.
 
 The club crest and colors come from [blackthornrugbyclub.com](https://www.blackthornrugbyclub.com). The app is a dark charcoal tool. Gold (`#F2B10B`) is the accent. The crest file is `apps/web/public/brand/logo.jpg`.
 
@@ -82,6 +82,19 @@ Owner decisions are in `docs/DECISIONS.md`.
 | Email notices only after a person opts in | Done |
 | Daily cron documented and left off until deploy | Done |
 | Mobile and desktop screenshots | `docs/screenshots/phase-6` |
+
+## Phase 7 acceptance
+
+| Criterion | Status |
+| --- | --- |
+| Shareable invite, club join, and one-time recovery links | Done |
+| 180-day sliding HttpOnly session, token hashes only | Done |
+| One-time `BOOTSTRAP_TOKEN` setup | Done |
+| Email optional and hidden when `EMAIL_PROVIDER=none` | Done |
+| Authz, CSRF, cookie flags, CSP, rate limits, IDOR checks | Done |
+| axe on login, home, and log | Done |
+| Operator deploy runbook, cron enabled, service worker | Done |
+| Mobile and desktop screenshots | `docs/screenshots/phase-7` |
 
 ## Still open
 

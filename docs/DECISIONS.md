@@ -4,7 +4,7 @@ Recorded 8 November 2026. These replace the Phase 1 open questions.
 
 | # | Decision |
 | --- | --- |
-| 1 | Sign-in is an email magic link. There are no passwords. |
+| 1 | Updated in decision 14. There are no passwords. Sign-in is a link, not an email requirement. |
 | 2 | One club. Groups are Forwards and Backs. Positions are the standard XV list, seeded as club config. Lock is one position (shirts 4 and 5 share it). Wings are Left Wing and Right Wing. |
 | 3 | The offseason runs from 8 November 2026 through 30 April 2027. Every board uses America/New_York. |
 | 4 | Updated after Phase 2. Identical same-day workouts all count. The engine does not flag duplicates or overlaps. Session, daily, and weekly load caps are the only limits. A repeated submit of the same form is still idempotent. |
@@ -16,5 +16,7 @@ Recorded 8 November 2026. These replace the Phase 1 open questions.
 | 10 | Updated for Phase 4. Coaches and admins may keep an optional training profile and log workouts. Position and group are optional for them. With no position they appear on the overall, weekly, and monthly boards and on a Coaches filter. They stay off the forwards, backs, and position boards until they set a position. Players still choose a position. |
 | 11 | Updated for Phase 5. Coaches and admins moderate, edit position and availability, read the audit log, and export CSV. Only an admin invites, resends, revokes, changes a role, deactivates, creates a scoring version, posts a manual adjustment, or edits the offseason. A new scoring version copies the active config and waits until its effective date. Past ledger rows are never updated. Restore posts an adjustment that cancels the latest reversal. It does not re-score the session. The club cannot remove its last active admin. |
 | 12 | Updated for Phase 5 review. Reject means the log looks wrong or is not a legitimate session. Void means it was logged by mistake. Both remove the points. The player sees that distinct label and the coach's reason. Restore returns exactly the points the reversal removed and does not re-score. Workout and points CSV stays available to coaches and admins. |
+| 13 | Approved after Phase 6. A badge stays earned if a later void drops the player under the milestone. Challenges do not add bonus points to the ledger. |
+| 14 | The club has no mail domain at launch. The app is hosted on a workers.dev URL. Email sending is optional and off (`EMAIL_PROVIDER=none`). Admins create one-time invite links and an optional club join link, then copy or share them. Redeeming a link sets an HttpOnly session cookie for 180 days, sliding, and only the token hash is stored. A coach can mint a 15-minute one-time sign-in link from the roster. A signed-in member can mint one for their other device. The first admin is created once from the `BOOTSTRAP_TOKEN` secret, and that setup then disables itself. |
 
-The first admin is not seeded. Set the `BOOTSTRAP_ADMIN_EMAIL` secret. The first magic-link request for that address creates the admin membership if the club has none. After that, the secret does nothing.
+The first admin is not seeded. Set `BOOTSTRAP_TOKEN`, open `/setup` once, then delete the secret. `BOOTSTRAP_ADMIN_EMAIL` remains only for an optional email provider.

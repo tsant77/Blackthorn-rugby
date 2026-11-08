@@ -17,6 +17,7 @@ export const clubs = sqliteTable("clubs", {
   slug: text("slug").notNull(),
   timezone: text("timezone").notNull(),
   createdAt: createdAt(),
+  bootstrapConsumedAt: integer("bootstrap_consumed_at", { mode: "timestamp_ms" }),
   updatedAt: updatedAt(),
 }, (table) => [
   uniqueIndex("clubs_slug_unique").on(table.slug),
@@ -87,6 +88,28 @@ export const loginAttempts = sqliteTable("login_attempts", {
   createdAt: createdAt(),
 }, (table) => [
   index("login_attempts_bucket_idx").on(table.bucketKey, table.createdAt),
+]);
+
+export const accessLinks = sqliteTable("access_links", {
+  id: text("id").primaryKey(),
+  clubId: text("club_id").notNull().references(() => clubs.id, { onDelete: "restrict" }),
+  kind: text("kind").notNull(),
+  tokenHash: text("token_hash").notNull(),
+  role: text("role"),
+  landing: text("landing"),
+  label: text("label"),
+  userId: text("user_id").references(() => users.id, { onDelete: "restrict" }),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+  consumedAt: integer("consumed_at", { mode: "timestamp_ms" }),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "restrict" }),
+  createdAt: createdAt(),
+}, (table) => [
+  uniqueIndex("access_links_token_unique").on(table.tokenHash),
+  index("access_links_club_kind_idx").on(table.clubId, table.kind),
+  check("access_links_kind_chk", sql`${table.kind} IN ('invite', 'signin', 'club')`),
+  check("access_links_role_chk", sql`${table.role} IS NULL OR ${table.role} IN ('player', 'coach', 'admin')`),
+  check("access_links_landing_chk", sql`${table.landing} IS NULL OR ${table.landing} IN ('player', 'pending')`),
 ]);
 
 export const invitations = sqliteTable("invitations", {
@@ -388,6 +411,7 @@ export const schemaTables = [
   groups,
   playerProfiles,
   competitionPeriods,
+  accessLinks,
   scoringRuleVersions,
   workouts,
   workoutExercises,

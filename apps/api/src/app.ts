@@ -8,10 +8,12 @@ import { registerAdminRoutes } from "./admin";
 import { registerEngageRoutes } from "./engage";
 import { registerAnalyticsRoutes } from "./analytics";
 import { registerWorkoutRoutes } from "./workouts";
+import { emailEnabled, registerLinkRoutes } from "./links";
 
 const CLUB_ID = clubCatalog.id;
 const SESSION_COOKIE = "blackthorn_session";
-const SESSION_MS = 14 * 24 * 60 * 60 * 1000;
+const SESSION_MS = 180 * 24 * 60 * 60 * 1000;
+const SESSION_SLIDE_MS = 90 * 24 * 60 * 60 * 1000;
 const LOGIN_LINK_MS = 15 * 60 * 1000;
 const INVITE_MS = 7 * 24 * 60 * 60 * 1000;
 const RATE_WINDOW_MS = 15 * 60 * 1000;
@@ -26,8 +28,11 @@ export interface Env {
   EMAIL_FROM?: string;
   APP_ORIGIN?: string;
   BOOTSTRAP_ADMIN_EMAIL?: string;
+  BOOTSTRAP_TOKEN?: string;
   AUTH_EMAIL_LIMIT?: string;
   AUTH_IP_LIMIT?: string;
+  AUTH_LINK_LIMIT?: string;
+  AUTH_REDEEM_LIMIT?: string;
 }
 
 type AppEnv = { Bindings: Env };
@@ -50,10 +55,37 @@ interface SessionRow {
   injury_note: string | null;
   training_locked: number | null;
   email_notifications: number;
+  expires_at: number;
 }
 
 export function createApp(): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
+
+  app.use("*", async (c, next) => {
+    if (!["GET", "HEAD", "OPTIONS"].includes(c.req.method)) {
+      const site = c.req.header("sec-fetch-site");
+      if (site === "cross-site") return c.json({ error: "Cross-site request blocked." }, 403);
+      const origin = c.req.header("origin");
+      if (origin) {
+        const self = new URL(c.req.url).origin;
+        const configured = c.env.APP_ORIGIN?.replace(/\/$/, "");
+        if (origin !== self && origin !== configured) return c.json({ error: "Cross-site request blocked." }, 403);
+      }
+    }
+    await next();
+    const headers = c.res.headers;
+    headers.set("x-content-type-options", "nosniff");
+    headers.set("referrer-policy", "strict-origin-when-cross-origin");
+    headers.set("x-frame-options", "DENY");
+    headers.set("permissions-policy", "camera=(), microphone=(), geolocation=()");
+    headers.set(
+      "content-security-policy",
+      "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+    );
+    if (new URL(c.req.url).protocol === "https:") {
+      headers.set("strict-transport-security", "max-age=15552000; includeSubDomains");
+    }
+  });
 
   app.get("/health", (c) => c.json({ ok: true, service: "blackthorn-rugby" }));
 
@@ -61,6 +93,7 @@ export function createApp(): Hono<AppEnv> {
     const body = await readJson(c);
     const email = normalizeEmail(body?.email);
     if (!email) return c.json({ error: "Enter a valid email." }, 400);
+    if (!emailEnabled(c.env)) return c.json({ error: "Email sign-in is off." }, 404);
     const now = Date.now();
     const ip = clientIp(c);
     if (!(await allowAttempt(c.env.DB, `ip:${ip}`, attemptLimit(c.env.AUTH_IP_LIMIT, 30), now))) {
@@ -237,6 +270,7 @@ export function createApp(): Hono<AppEnv> {
   registerAnalyticsRoutes(app, currentSession);
   registerAdminRoutes(app, currentSession);
   registerEngageRoutes(app, currentSession);
+  registerLinkRoutes(app, currentSession, startSession);
 
   app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
   app.all("/auth/*", (c) => c.redirect("/login?error=invalid"));
@@ -418,23 +452,42 @@ async function currentSession(c: AppContext): Promise<SessionRow | null> {
   const token = getCookie(c, SESSION_COOKIE);
   if (!token) return null;
   const hash = await sha256Hex(token);
-  return c.env.DB.prepare(
+  const session = await c.env.DB.prepare(
     `SELECT u.id AS user_id, u.email, u.name, u.status AS user_status, u.email_notifications,
             m.id AS membership_id, m.role, m.status AS membership_status, m.club_id,
             p.id AS profile_id, p.roster_name, p.position_id, p.group_id, p.injury_status, p.injury_note,
-            p.training_locked
+            p.training_locked, s.expires_at
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      JOIN club_memberships m ON m.user_id = u.id AND m.club_id = ? AND m.status = 'active'
      LEFT JOIN player_profiles p ON p.membership_id = m.id
      WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ? AND u.status != 'disabled'`,
   ).bind(CLUB_ID, hash, Date.now()).first<SessionRow>();
+  if (!session) return null;
+  if (session.expires_at - Date.now() < SESSION_SLIDE_MS) {
+    const expiresAt = Date.now() + SESSION_MS;
+    await c.env.DB.prepare("UPDATE sessions SET expires_at = ? WHERE token_hash = ?").bind(expiresAt, hash).run();
+    setCookie(c, SESSION_COOKIE, token, {
+      httpOnly: true,
+      secure: new URL(c.req.url).protocol === "https:",
+      sameSite: "Lax",
+      path: "/",
+      maxAge: SESSION_MS / 1000,
+    });
+  }
+  return session;
 }
 
 function presentSession(session: SessionRow) {
   return {
-    user: { id: session.user_id, email: session.email, name: session.name, emailNotifications: session.email_notifications === 1 },
-    membership: { id: session.membership_id, role: session.role, clubId: session.club_id },
+    user: {
+      id: session.user_id,
+      email: session.email.endsWith("@members.invalid") ? "" : session.email,
+      name: session.name,
+      emailNotifications: session.email_notifications === 1,
+    },
+    membership: { id: session.membership_id, role: session.role, clubId: session.club_id, status: session.membership_status },
+    pendingApproval: session.user_status === "invited",
     profile: session.profile_id
       ? {
           id: session.profile_id,
@@ -445,7 +498,7 @@ function presentSession(session: SessionRow) {
           injuryNote: session.injury_note,
         }
       : null,
-    needsOnboarding: session.role === "player" && !session.profile_id,
+    needsOnboarding: session.role === "player" && session.user_status !== "invited" && !session.profile_id,
   };
 }
 
