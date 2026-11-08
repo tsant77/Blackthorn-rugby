@@ -42,7 +42,7 @@ R2 stays unbound this offseason.
 
 R2 is in the data model (`media_objects`) and commented out of `wrangler.toml` so a deploy does not create a bucket by surprise.
 
-Weekly load, leaderboards, and achievement checks are request-time queries at this club's size (under 25 players). No queue or cron until a real volume problem shows up.
+Weekly load, leaderboards, and badge checks are request-time queries at this club's size (under 25 players). Challenge start and end notices also run when someone opens the challenges page. A daily Worker cron, documented in `docs/DEPLOYMENT.md` and left commented in `wrangler.toml`, sends the Monday recap and repeats those transitions. It is not deployed.
 
 ## Worker
 

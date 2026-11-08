@@ -10,11 +10,15 @@ export function ProfilePage() {
   const [injuryNote, setInjuryNote] = useState(me?.profile?.injuryNote ?? "");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [badges, setBadges] = useState<{ key: string; name: string; description: string; awarded_at: number | null }[]>([]);
+  const [emailOn, setEmailOn] = useState(me?.user.emailNotifications ?? false);
 
   useEffect(() => {
+    setEmailOn(me?.user.emailNotifications ?? false);
     if (!me?.profile) return;
     setInjuryStatus(me.profile.injuryStatus);
     setInjuryNote(me.profile.injuryNote ?? "");
+    void api<{ badges: { key: string; name: string; description: string; awarded_at: number | null }[] }>("/api/badges").then((body) => setBadges(body.badges));
   }, [me]);
 
   async function saveInjury() {
@@ -44,6 +48,17 @@ export function ProfilePage() {
         <p className="font-heading font-semibold">{me?.profile?.rosterName ?? me?.user.name}</p>
         <p className="text-sm text-quiet">{me?.user.email}</p>
         <p className="mt-s1 text-sm capitalize text-quiet">{me?.membership.role}</p>
+      </section>
+      <section className="rounded-md border border-line bg-raised p-s2">
+        <h2 className="font-heading font-semibold">Badges</h2>
+        <ul className="mt-s2 flex flex-col gap-s1">
+          {badges.map((badge) => (
+            <li key={badge.key}>
+              <p className="font-heading font-semibold">{badge.name}</p>
+              <p className="text-sm text-quiet">{badge.awarded_at ? "Earned" : "Not yet"} · {badge.description}</p>
+            </li>
+          ))}
+        </ul>
       </section>
       {me?.profile ? (
         <section className="flex flex-col gap-s2 rounded-md border border-line bg-raised p-s2">
@@ -76,6 +91,18 @@ export function ProfilePage() {
           </button>
         </section>
       ) : null}
+      <label className="flex items-center gap-s2 text-sm">
+        <input
+          type="checkbox"
+          checked={emailOn}
+          onChange={(event) => {
+            const next = event.target.checked;
+            setEmailOn(next);
+            void api("/api/me/notifications", { method: "PATCH", body: JSON.stringify({ emailNotifications: next }) }).then(() => refresh());
+          }}
+        />
+        Email me notifications. Off by default. In-app notices stay on.
+      </label>
       <button type="button" onClick={() => void logout()} className="w-fit text-quiet underline">
         Sign out
       </button>

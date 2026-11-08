@@ -3,6 +3,8 @@ import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { EmptyState, LoadingScreen, Shell } from "./components/Shell";
 import { ActivityPage } from "./pages/ActivityPage";
+import { ChallengesPage } from "./pages/ChallengesPage";
+import { InboxPage } from "./pages/InboxPage";
 import { BoardPage } from "./pages/BoardPage";
 import { DesignPage } from "./pages/DesignPage";
 import { HomePage } from "./pages/HomePage";
@@ -34,6 +36,8 @@ export function App() {
               <Route path="/moderate" element={<ModeratePage />} />
               <Route path="/members" element={<MembersPage />} />
               <Route path="/rules" element={<RulesPage />} />
+              <Route path="/challenges" element={<ChallengesPage />} />
+              <Route path="/inbox" element={<InboxPage />} />
               <Route path="/team" element={<TeamPage />} />
               <Route path="/you" element={<ProfilePage />} />
               <Route path="/invite" element={<InvitePage />} />

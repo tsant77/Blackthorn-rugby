@@ -42,3 +42,14 @@ export const positionCatalog = [
 ] as const;
 
 export const scoringRuleId = "rule_v1";
+
+/** Club badge definitions. Awarded once per player. Not people. */
+export const achievementCatalog = [
+  { id: "ach_first_session", key: "first_session", name: "First session", description: "Log the first workout that counts.", criteria: { kind: "sessions", count: 1 } },
+  { id: "ach_streak_3", key: "streak_3", name: "Three-day streak", description: "Train three days in a row.", criteria: { kind: "streak", days: 3 } },
+  { id: "ach_streak_7", key: "streak_7", name: "Seven-day streak", description: "Train seven days in a row.", criteria: { kind: "streak", days: 7 } },
+  { id: "ach_points_50", key: "points_50", name: "50 points", description: "Earn 50 points on the ledger.", criteria: { kind: "points", tenths: 500 } },
+  { id: "ach_points_250", key: "points_250", name: "250 points", description: "Earn 250 points on the ledger.", criteria: { kind: "points", tenths: 2500 } },
+  { id: "ach_variety_3", key: "variety_3", name: "Three activities", description: "Log three different activity types.", criteria: { kind: "variety", types: 3 } },
+  { id: "ach_variety_7", key: "variety_7", name: "Full mix", description: "Log every activity type.", criteria: { kind: "variety", types: 7 } },
+] as const;

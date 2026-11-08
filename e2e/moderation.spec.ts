@@ -35,7 +35,7 @@ test("coach voids a workout and the board drops", async ({ page }) => {
   await page.getByRole("link", { name: "Moderate", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Moderation" })).toBeVisible();
   await page.getByLabel("Reason").fill("Logged twice");
-  await page.getByRole("button", { name: "Void" }).click();
+  await page.locator("li").filter({ hasText: "Test Player" }).filter({ hasText: "submitted" }).first().getByRole("button", { name: "Void" }).click();
   await expect(page.getByText("voided")).toBeVisible();
 
   await signOut(page);
@@ -49,8 +49,8 @@ test("coach voids a workout and the board drops", async ({ page }) => {
   await page.getByText("Logged twice").scrollIntoViewIfNeeded();
   await page.screenshot({ path: `${shots}/player-status-mobile.png`, fullPage: true });
   await page.getByRole("link", { name: "Board" }).click();
-  await expect(page.getByText("0.0").first()).toBeVisible();
-  await expect(page.getByText("6.0")).toHaveCount(0);
+  const row = page.getByRole("listitem").filter({ hasText: "Test Player" }).filter({ hasText: "0 sessions" }).first();
+  await expect(row.getByText("0.0")).toBeVisible();
 });
 
 async function signOut(page: Page) {

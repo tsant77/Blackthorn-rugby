@@ -57,6 +57,19 @@ Local `wrangler dev` with `EMAIL_PROVIDER=console` does not send mail. It logs a
 
 Photos are out of scope. There is no R2 binding.
 
+## Scheduled job
+
+`src/index.ts` exports a `scheduled` handler. Once a day it publishes challenge start and end notices, archives a challenge the day after it ends, and on Monday sends each player last week's points. Email goes out only when that person opted in. The default is in-app only.
+
+The cron is written in `apps/api/wrangler.toml` and left commented so a deploy does not start it by surprise. Uncomment it when the owner wants the job:
+
+```toml
+[triggers]
+crons = ["0 12 * * *"]
+```
+
+12:00 UTC is 07:00 EST and 08:00 EDT. Opening the challenges page also applies start and end transitions, so a missed cron still catches up the next time someone looks. The weekly recap waits for the cron.
+
 ## Deploy and rollback
 
 ```bash

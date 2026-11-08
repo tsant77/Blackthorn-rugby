@@ -31,3 +31,9 @@ run_worker_first = [ "/api/*", "/auth/*", "/health" ]
 name = "EMAIL"
 
 # Photos are out of scope this offseason. Do not add an R2 binding.
+
+# Daily job at 12:00 UTC (07:00 EST / 08:00 EDT). It opens and closes challenges and,
+# on Mondays, sends the previous week's recap. Leave this commented until the owner
+# deploys. The handler is in src/index.ts. See docs/DEPLOYMENT.md.
+# [triggers]
+# crons = ["0 12 * * *"]

@@ -153,6 +153,7 @@ formatPoints(tenths: number): string
 ## Deferred
 
 - Approval queues changing whether `submitted` points sit on the board.
-- Achievement math and challenge bonuses.
+- Badges are awarded from workouts and the ledger. They are not extra ledger rows, and a later void does not take a badge back.
+- Challenges track a target. They do not add bonus points to the ledger.
 - Admin adjustments are implemented. They are new `kind = adjustment` rows with a reason and an `occurred_on` date. They do not update older rows. A future scoring version does not recompute history.
 - Recompute jobs across a roster.

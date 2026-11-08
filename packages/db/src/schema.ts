@@ -28,6 +28,7 @@ export const users = sqliteTable("users", {
   name: text("name").notNull(),
   status: text("status").notNull(),
   emailVerifiedAt: integer("email_verified_at", { mode: "timestamp_ms" }),
+  emailNotifications: integer("email_notifications", { mode: "boolean" }).notNull().default(false),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (table) => [
@@ -350,9 +351,11 @@ export const notifications = sqliteTable("notifications", {
   title: text("title").notNull(),
   body: text("body").notNull(),
   readAt: integer("read_at", { mode: "timestamp_ms" }),
+  dedupeKey: text("dedupe_key"),
   createdAt: createdAt(),
 }, (table) => [
   index("notifications_user_idx").on(table.userId, table.readAt, table.createdAt),
+  uniqueIndex("notifications_dedupe_unique").on(table.userId, table.dedupeKey).where(sql`${table.dedupeKey} IS NOT NULL`),
 ]);
 
 export const mediaObjects = sqliteTable("media_objects", {

@@ -40,6 +40,7 @@ export function ModeratePage() {
   return (
     <main className="mx-auto flex max-w-lg flex-col gap-s3 px-s2 py-s4">
       <h1 className="font-heading text-2xl font-semibold">Moderation</h1>
+      <p className="text-quiet">Reject a session that is not legitimate. Void a session logged by mistake. Both remove the points.</p>
       <label className="flex flex-col gap-s1 text-sm text-quiet">
         Reason
         <input value={reason} onChange={(event) => setReason(event.target.value)} className="rounded-md border border-line bg-canvas px-s2 py-s1 text-base text-ink" />

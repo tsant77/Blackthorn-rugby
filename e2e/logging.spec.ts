@@ -32,7 +32,7 @@ test("log a workout and see it on the leaderboard", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.getByRole("link", { name: "Board" }).click();
   await expect(page.getByRole("heading", { name: "Leaderboard" })).toBeVisible();
-  await expect(page.getByText("Test Player")).toBeVisible();
+  await expect(page.getByText("Test Player").first()).toBeVisible();
   await expect(page.getByText("6.0").first()).toBeVisible();
   await page.screenshot({ path: `${shots}/leaderboard-desktop.png` });
 });

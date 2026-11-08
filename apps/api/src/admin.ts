@@ -5,6 +5,8 @@ import { renderMagicLink } from "./email";
 import { randomToken, sha256Hex } from "./tokens";
 import type { Env } from "./app";
 import { scoringContext } from "./workouts";
+import { syncBadges } from "./badges";
+import { notifyReview } from "./notify";
 
 const CLUB_ID = clubCatalog.id;
 type AppEnv = { Bindings: Env };
@@ -75,6 +77,8 @@ export function registerAdminRoutes(
         ...(restore === 0 ? [] : [ledger(c.env.DB, workout, session.user_id, restore, "adjustment", "restore", reason || "Restored", now)]),
         audit(c.env.DB, session.user_id, "workout_restored", workout.id, { status: workout.status }, { status: "submitted", reason }, now),
       ]);
+      await notifyReview(c.env, workout.id, "restore", reason || "Restored", now);
+      await syncBadges(c.env, workout.player_profile_id, now);
       return c.json({ ok: true });
     }
     if (workout.status !== "submitted" && workout.status !== "approved") {
@@ -88,6 +92,8 @@ export function registerAdminRoutes(
       ...(net === 0 ? [] : [ledger(c.env.DB, workout, session.user_id, -net, "reversal", action, reason, now)]),
       audit(c.env.DB, session.user_id, `workout_${action}`, workout.id, { netPointsTenths: net }, { status, reason }, now),
     ]);
+    await notifyReview(c.env, workout.id, action, reason, now);
+    await syncBadges(c.env, workout.player_profile_id, now);
     return c.json({ ok: true });
   });
 
@@ -293,6 +299,7 @@ export function registerAdminRoutes(
       ) VALUES (?, ?, ?, NULL, ?, 'adjustment', ?, 'adjustment', ?, ?, ?, ?)`,
     ).bind(id, CLUB_ID, profileId, context.ruleId, pointsTenths, reason, occurredOn, session.user_id, now).run();
     await runAudit(c.env.DB, session.user_id, "points_adjusted", "point_transaction", id, null, { profileId, pointsTenths, reason, occurredOn }, now);
+    await syncBadges(c.env, profileId, now);
     return c.json({ ok: true }, 201);
   });
 

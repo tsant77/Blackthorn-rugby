@@ -76,6 +76,9 @@ describe("coach admin tools", () => {
   it("lets a coach moderate and blocks admin-only changes", async () => {
     const queue = await app.request("http://localhost/api/moderation", { headers: { cookie: coach } }, env);
     expect(queue.status).toBe(200);
+    const csv = await app.request("http://localhost/api/export/workouts.csv", { headers: { cookie: coach } }, env);
+    expect(csv.status).toBe(200);
+    expect(csv.headers.get("content-type")).toContain("text/csv");
     const held = await app.request(`http://localhost/api/profiles/${profileId}`, {
       method: "PATCH",
       headers: { "content-type": "application/json", cookie: coach },

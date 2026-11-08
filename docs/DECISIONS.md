@@ -13,8 +13,8 @@ Recorded 8 November 2026. These replace the Phase 1 open questions.
 | 7 | Caps stay at 15 points per session, 30 points per day, and 600 weighted minutes across any 7 civil days. |
 | 8 | Distance is shown in miles. The database stores meters. |
 | 9 | No photo uploads this offseason. R2 is not bound. |
-
 | 10 | Updated for Phase 4. Coaches and admins may keep an optional training profile and log workouts. Position and group are optional for them. With no position they appear on the overall, weekly, and monthly boards and on a Coaches filter. They stay off the forwards, backs, and position boards until they set a position. Players still choose a position. |
 | 11 | Updated for Phase 5. Coaches and admins moderate, edit position and availability, read the audit log, and export CSV. Only an admin invites, resends, revokes, changes a role, deactivates, creates a scoring version, posts a manual adjustment, or edits the offseason. A new scoring version copies the active config and waits until its effective date. Past ledger rows are never updated. Restore posts an adjustment that cancels the latest reversal. It does not re-score the session. The club cannot remove its last active admin. |
+| 12 | Updated for Phase 5 review. Reject means the log looks wrong or is not a legitimate session. Void means it was logged by mistake. Both remove the points. The player sees that distinct label and the coach's reason. Restore returns exactly the points the reversal removed and does not re-score. Workout and points CSV stays available to coaches and admins. |
 
 The first admin is not seeded. Set the `BOOTSTRAP_ADMIN_EMAIL` secret. The first magic-link request for that address creates the admin membership if the club has none. After that, the secret does nothing.

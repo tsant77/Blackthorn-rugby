@@ -14,6 +14,7 @@ import {
 } from "@blackthorn/scoring";
 import { clubCatalog } from "@blackthorn/db/catalog";
 import type { Env } from "./app";
+import { syncBadges } from "./badges";
 
 type AppEnv = { Bindings: Env };
 type AppContext = Context<AppEnv>;
@@ -116,6 +117,7 @@ export function registerWorkoutRoutes(
       audit(c.env.DB, session.user_id, "workout_logged", id, null, { awardedPointsTenths: decision.awardedPointsTenths }, now),
     ];
     await c.env.DB.batch(statements);
+    await syncBadges(c.env, session.profile_id!, now);
     return c.json({
       ...(await workoutPayload(c.env.DB, id, session.profile_id!)),
       awardedPointsTenths: decision.awardedPointsTenths,
@@ -173,6 +175,7 @@ export function registerWorkoutRoutes(
       audit(c.env.DB, session.user_id, "workout_edited", owned.id, { netPointsTenths: net }, { awardedPointsTenths: decision.awardedPointsTenths }, now),
     ];
     await c.env.DB.batch(statements);
+    await syncBadges(c.env, session.profile_id!, now);
     return c.json({
       ...(await workoutPayload(c.env.DB, owned.id, session.profile_id!)),
       awardedPointsTenths: decision.awardedPointsTenths,
@@ -193,6 +196,7 @@ export function registerWorkoutRoutes(
       ...reversalInsert(c.env.DB, session, owned.id, context.ruleId, net, now),
       audit(c.env.DB, session.user_id, "workout_deleted", owned.id, { netPointsTenths: net }, { status: "voided" }, now),
     ]);
+    await syncBadges(c.env, session.profile_id!, now);
     return c.json({ ok: true });
   });
 

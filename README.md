@@ -1,6 +1,6 @@
 # Blackthorn Rugby — Offseason Performance Platform
 
-Phase 5 of 7 for Blackthorn Rugby Club. Coaches can void or restore a workout, and admins can manage members, scoring versions, the offseason, and point adjustments. The ledger stays append-only.
+Phase 6 of 7 for Blackthorn Rugby Club. Players earn badges, coaches publish challenges, and the inbox keeps review decisions, challenge notices, and the weekly recap. The ledger stays append-only.
 
 The club crest and colors come from [blackthornrugbyclub.com](https://www.blackthornrugbyclub.com). The app is a dark charcoal tool. Gold (`#F2B10B`) is the accent. The crest file is `apps/web/public/brand/logo.jpg`.
 
@@ -72,12 +72,23 @@ Owner decisions are in `docs/DECISIONS.md`.
 | Playwright: coach void drops the board | Done |
 | Mobile and desktop screenshots | `docs/screenshots/phase-5` |
 
+## Phase 6 acceptance
+
+| Criterion | Status |
+| --- | --- |
+| Badges for a first session, streaks, point totals, and activity variety, awarded once | Done |
+| Coach challenges for a player or a group, with progress and a result | Done |
+| In-app inbox for badges, review decisions, challenge start and end, and the weekly recap | Done |
+| Email notices only after a person opts in | Done |
+| Daily cron documented and left off until deploy | Done |
+| Mobile and desktop screenshots | `docs/screenshots/phase-6` |
+
 ## Still open
 
 - Which address sends mail, once the club domain is on Cloudflare Email Service (`EMAIL_FROM`).
-- Whether reject and void should differ for the player beyond the status word. Both remove the points.
-- Whether restore should re-score under the rule active that day. It currently puts back the points the reversal removed.
+- Whether a badge should be taken away if a later void drops the player back under the milestone. It stays earned.
+- Whether a challenge should add bonus points. It does not. It only tracks the target.
 
 ## Not in this phase
 
-Challenges, achievements, notifications, the service worker, and any deploy. See `docs/DEPLOYMENT.md`.
+The service worker and any deploy. See `docs/DEPLOYMENT.md`.

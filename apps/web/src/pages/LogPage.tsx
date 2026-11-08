@@ -209,7 +209,7 @@ export function LogPage() {
             <li key={workout.id} className="flex items-center gap-s2 rounded-md border border-line bg-raised px-s2 py-s1">
               <div className="flex-1">
                 <p className="font-heading font-semibold capitalize">{workout.type.replaceAll("_", " ")}</p>
-                <p className="text-sm text-quiet">{workout.occurred_on} · {workout.duration_min} min · {workout.status}</p>
+                <p className="text-sm text-quiet">{workout.occurred_on} · {workout.duration_min} min · {sessionLabel(workout.status, workout.review_note)}</p>
                 {workout.review_note ? <p className="text-sm text-gold-soft">{workout.review_note}</p> : null}
               </div>
               <p className="font-display text-2xl">{formatPoints(workout.points_tenths)}</p>
@@ -225,4 +225,12 @@ export function LogPage() {
       </section>
     </main>
   );
+}
+
+function sessionLabel(status: string, note: string | null): string {
+  if (status === "rejected") return "Rejected · not a legitimate session";
+  if (status === "voided" && note === "Deleted by the player") return "Deleted";
+  if (status === "voided") return "Voided · logged by mistake";
+  if (status === "approved") return "Approved";
+  return "Submitted";
 }

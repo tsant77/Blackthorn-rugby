@@ -5,6 +5,7 @@ import { clubCatalog } from "@blackthorn/db/catalog";
 import { cloudflareEmailProvider, consoleEmailProvider, renderMagicLink, type EmailProvider } from "./email";
 import { randomToken, secretsEqual, sha256Hex } from "./tokens";
 import { registerAdminRoutes } from "./admin";
+import { registerEngageRoutes } from "./engage";
 import { registerAnalyticsRoutes } from "./analytics";
 import { registerWorkoutRoutes } from "./workouts";
 
@@ -25,6 +26,8 @@ export interface Env {
   EMAIL_FROM?: string;
   APP_ORIGIN?: string;
   BOOTSTRAP_ADMIN_EMAIL?: string;
+  AUTH_EMAIL_LIMIT?: string;
+  AUTH_IP_LIMIT?: string;
 }
 
 type AppEnv = { Bindings: Env };
@@ -46,6 +49,7 @@ interface SessionRow {
   injury_status: string | null;
   injury_note: string | null;
   training_locked: number | null;
+  email_notifications: number;
 }
 
 export function createApp(): Hono<AppEnv> {
@@ -59,10 +63,10 @@ export function createApp(): Hono<AppEnv> {
     if (!email) return c.json({ error: "Enter a valid email." }, 400);
     const now = Date.now();
     const ip = clientIp(c);
-    if (!(await allowAttempt(c.env.DB, `ip:${ip}`, 30, now))) {
+    if (!(await allowAttempt(c.env.DB, `ip:${ip}`, attemptLimit(c.env.AUTH_IP_LIMIT, 30), now))) {
       return c.json({ error: "Too many attempts. Try again later." }, 429);
     }
-    if (!(await allowAttempt(c.env.DB, `email:${email}`, 5, now))) {
+    if (!(await allowAttempt(c.env.DB, `email:${email}`, attemptLimit(c.env.AUTH_EMAIL_LIMIT, 5), now))) {
       return c.json({ error: "Too many attempts. Try again later." }, 429);
     }
 
@@ -232,6 +236,7 @@ export function createApp(): Hono<AppEnv> {
   registerWorkoutRoutes(app, currentSession);
   registerAnalyticsRoutes(app, currentSession);
   registerAdminRoutes(app, currentSession);
+  registerEngageRoutes(app, currentSession);
 
   app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
   app.all("/auth/*", (c) => c.redirect("/login?error=invalid"));
@@ -414,7 +419,7 @@ async function currentSession(c: AppContext): Promise<SessionRow | null> {
   if (!token) return null;
   const hash = await sha256Hex(token);
   return c.env.DB.prepare(
-    `SELECT u.id AS user_id, u.email, u.name, u.status AS user_status,
+    `SELECT u.id AS user_id, u.email, u.name, u.status AS user_status, u.email_notifications,
             m.id AS membership_id, m.role, m.status AS membership_status, m.club_id,
             p.id AS profile_id, p.roster_name, p.position_id, p.group_id, p.injury_status, p.injury_note,
             p.training_locked
@@ -428,7 +433,7 @@ async function currentSession(c: AppContext): Promise<SessionRow | null> {
 
 function presentSession(session: SessionRow) {
   return {
-    user: { id: session.user_id, email: session.email, name: session.name },
+    user: { id: session.user_id, email: session.email, name: session.name, emailNotifications: session.email_notifications === 1 },
     membership: { id: session.membership_id, role: session.role, clubId: session.club_id },
     profile: session.profile_id
       ? {
@@ -485,6 +490,11 @@ async function ensureMembership(db: D1Database, userId: string, role: string, no
   await db.prepare(
     "INSERT INTO club_memberships (id, club_id, user_id, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'active', ?, ?)",
   ).bind(crypto.randomUUID(), CLUB_ID, userId, role, now, now).run();
+}
+
+function attemptLimit(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 async function allowAttempt(db: D1Database, bucket: string, limit: number, now: number): Promise<boolean> {
