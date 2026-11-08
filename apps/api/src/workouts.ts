@@ -180,7 +180,7 @@ export function registerWorkoutRoutes(
       if (error instanceof ClientPointsError) return c.json({ error: error.message }, 400);
       throw error;
     }
-    const context = await scoringBasis(c.env.DB);
+    const context = await scoringMetadata(c.env.DB);
     const draft = draftFromBody(body, context.today);
     if (!draft) return c.json({ error: "Check the duration, type, and date." }, 400);
     // The stored scoring version and bounded training history are independent reads.
@@ -189,11 +189,10 @@ export function registerWorkoutRoutes(
       loadHistory(c.env.DB, session.profile_id!, draft.workout.occurredOn, owned.id),
     ]);
     if (selected.effectiveOn && draft.workout.occurredOn < selected.effectiveOn) return c.json({ error: "An edit cannot move a workout before its scoring version. Delete it and log a new workout instead." }, 400);
-    context.rule = selected.rule; context.ruleId = selected.id;
     const decision = scoreWorkout({
       workout: { ...draft.workout, clientRequestId: null },
       athlete: athleteOf(session),
-      rule: context.rule,
+      rule: selected.rule,
       history,
       now: new Date(),
       timeZone: context.timeZone,
@@ -215,13 +214,13 @@ export function registerWorkoutRoutes(
         draft.workout.intensity ?? null,
         draft.distanceM,
         draft.workout.notes ?? null,
-        context.ruleId,
+        selected.id,
         now,
         owned.id,
       ),
-      ...reversalInsert(c.env.DB, session, owned.id, context.ruleId, net, now),
-      ...ledgerInserts(c.env.DB, session, owned.id, context.ruleId, decision.transactions.filter(t => t.reasonCode !== "daily_cap"), now),
-      dailyCapStatement(c.env.DB, session.profile_id!, owned.id, context.ruleId, draft.workout.occurredOn, context.rule.dailyCapTenths, session.user_id, now),
+      ...reversalInsert(c.env.DB, session, owned.id, selected.id, net, now),
+      ...ledgerInserts(c.env.DB, session, owned.id, selected.id, decision.transactions.filter(t => t.reasonCode !== "daily_cap"), now),
+      dailyCapStatement(c.env.DB, session.profile_id!, owned.id, selected.id, draft.workout.occurredOn, selected.rule.dailyCapTenths, session.user_id, now),
       ...await consistencyStatements(c.env.DB, session.profile_id!, [owned.occurred_on, draft.workout.occurredOn], session.user_id, now),
       audit(c.env.DB, session.user_id, "workout_edited", owned.id, { netPointsTenths: net }, { awardedPointsTenths: decision.awardedPointsTenths }, now),
       workoutStatement(c.env.DB, owned.id, session.profile_id!),
@@ -240,7 +239,7 @@ export function registerWorkoutRoutes(
     return c.json({
       ...payload,
       awardedPointsTenths: actual,
-      flags: [...decision.flags.filter(f=>f!=="daily_cap"),...(actual < Math.min(decision.grossPointsTenths,context.rule.sessionCapTenths)?["daily_cap"]:[])],
+      flags: [...decision.flags.filter(f=>f!=="daily_cap"),...(actual < Math.min(decision.grossPointsTenths,selected.rule.sessionCapTenths)?["daily_cap"]:[])],
     });
   });
 
@@ -319,7 +318,7 @@ function athleteOf(session: PlayerSession): { injuryStatus: "available" | "limit
   return { injuryStatus, trainingLocked: session.training_locked === 1 };
 }
 
-export async function scoringBasis(db: D1Database) {
+async function scoringMetadata(db: D1Database) {
   const [clubs, periods] = await db.batch([
     db.prepare("SELECT timezone FROM clubs WHERE id = ?").bind(CLUB_ID),
     db.prepare(
@@ -329,13 +328,22 @@ export async function scoringBasis(db: D1Database) {
   const club = clubs!.results[0] as { timezone: string } | undefined;
   const period = periods!.results[0] as { start_on: string; end_on: string } | undefined;
   const timeZone = club?.timezone ?? "America/New_York";
-  const today = civilDateInTimeZone(new Date(), timeZone);
-
-  const selected = await ruleForDate(db, today);
-  const rule = selected.rule;
   return {
-    timeZone, today, minDate: addDays(today, -rule.backdateDays), rule, ruleId: selected.id,
-    offseasonStart: period?.start_on ?? null, offseasonEnd: period?.end_on ?? null,
+    timeZone,
+    today: civilDateInTimeZone(new Date(), timeZone),
+    offseasonStart: period?.start_on ?? null,
+    offseasonEnd: period?.end_on ?? null,
+  };
+}
+
+export async function scoringBasis(db: D1Database) {
+  const metadata = await scoringMetadata(db);
+  const selected = await ruleForDate(db, metadata.today);
+  return {
+    ...metadata,
+    minDate: addDays(metadata.today, -selected.rule.backdateDays),
+    rule: selected.rule,
+    ruleId: selected.id,
   };
 }
 
