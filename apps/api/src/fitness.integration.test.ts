@@ -217,6 +217,9 @@ describe("fitness rules and immutable awards", () => {
       .bind(profile)
       .first<{ n: number }>();
     expect(points!.n).toBe(1000);
+    const saved = await Promise.all(responses.map(r => r.json() as Promise<{ awardedPointsTenths: number; workout: { points_tenths: number } }>));
+    expect(saved.reduce((total, row) => total + row.awardedPointsTenths, 0)).toBe(1000);
+    for (const row of saved) expect(row.workout.points_tenths).toBe(row.awardedPointsTenths);
     const duplicate = await Promise.all([
       log("2026-11-21", { clientRequestId: "same-request-1111" }),
       log("2026-11-21", { clientRequestId: "same-request-1111" }),

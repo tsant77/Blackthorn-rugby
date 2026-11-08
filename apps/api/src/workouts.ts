@@ -98,18 +98,14 @@ export function registerWorkoutRoutes(
       const selected = await ruleForDate(c.env.DB, draft.workout.occurredOn);
       context.rule = selected.rule; context.ruleId = selected.id;
     }
-    const existing = draft.clientRequestId
-      ? await c.env.DB.prepare(
-        "SELECT id FROM workouts WHERE player_profile_id = ? AND client_request_id = ? ",
-      ).bind(session.profile_id, draft.clientRequestId).first<{ id: string }>()
-      : null;
-    if (existing) return c.json(await workoutPayload(c.env.DB, existing.id, session.profile_id!, { idempotent: true }));
+    const reads = await submissionReads(c.env.DB, session.profile_id!, draft.workout.occurredOn, draft.clientRequestId);
+    if (reads.existing) return c.json(await workoutPayload(c.env.DB, reads.existing.id, session.profile_id!, { idempotent: true }));
 
     const decision = scoreWorkout({
       workout: draft.workout,
       athlete: athleteOf(session),
       rule: context.rule,
-      history: await loadHistory(c.env.DB, session.profile_id!, draft.workout.occurredOn, null),
+      history: reads.history,
       now: new Date(),
       timeZone: context.timeZone,
       offseasonStart: context.offseasonStart,
@@ -145,8 +141,14 @@ export function registerWorkoutRoutes(
       dailyCapStatement(c.env.DB, session.profile_id!, id, context.ruleId, draft.workout.occurredOn, context.rule.dailyCapTenths, session.user_id, now),
       ...await consistencyStatements(c.env.DB, session.profile_id!, [draft.workout.occurredOn], session.user_id, now),
       audit(c.env.DB, session.user_id, "workout_logged", id, null, { awardedPointsTenths: decision.awardedPointsTenths }, now),
+      // Read the authoritative response before leaving this scoring transaction.
+      workoutStatement(c.env.DB, id, session.profile_id!),
     ];
-    try { await c.env.DB.batch(statements); } catch (error) {
+    let saved: WorkoutRow | undefined;
+    try {
+      const results = await c.env.DB.batch<WorkoutRow>(statements);
+      saved = results.at(-1)!.results[0];
+    } catch (error) {
       if (mutationConflict(error)) return c.json({ error: "Workout changed. Reload and try again." }, 409);
       if (draft.clientRequestId) {
         const existing = await c.env.DB.prepare("SELECT id FROM workouts WHERE player_profile_id=? AND client_request_id=?").bind(session.profile_id,draft.clientRequestId).first<{ id: string }>();
@@ -155,7 +157,7 @@ export function registerWorkoutRoutes(
       throw error;
     }
     await syncBadges(c.env, session.profile_id!, now);
-    const payload = await workoutPayload(c.env.DB, id, session.profile_id!);
+    const payload = { workout: saved ? presentWorkout(saved) : null, idempotent: false };
     const actual = payload.workout?.points_tenths ?? 0;
     return c.json({
       ...payload,
@@ -218,13 +220,18 @@ export function registerWorkoutRoutes(
       dailyCapStatement(c.env.DB, session.profile_id!, owned.id, context.ruleId, draft.workout.occurredOn, context.rule.dailyCapTenths, session.user_id, now),
       ...await consistencyStatements(c.env.DB, session.profile_id!, [owned.occurred_on, draft.workout.occurredOn], session.user_id, now),
       audit(c.env.DB, session.user_id, "workout_edited", owned.id, { netPointsTenths: net }, { awardedPointsTenths: decision.awardedPointsTenths }, now),
+      workoutStatement(c.env.DB, owned.id, session.profile_id!),
     ];
-    try { await c.env.DB.batch(statements); } catch (error) {
+    let saved: WorkoutRow | undefined;
+    try {
+      const results = await c.env.DB.batch<WorkoutRow>(statements);
+      saved = results.at(-1)!.results[0];
+    } catch (error) {
       if (mutationConflict(error)) return c.json({ error: "Workout changed. Reload and try again." }, 409);
       throw error;
     }
     await syncBadges(c.env, session.profile_id!, now);
-    const payload = await workoutPayload(c.env.DB, owned.id, session.profile_id!);
+    const payload = { workout: saved ? presentWorkout(saved) : null, idempotent: false };
     const actual = payload.workout?.points_tenths ?? 0;
     return c.json({
       ...payload,
@@ -429,8 +436,21 @@ function utcWeekday(iso: string): number {
   return (date.getUTCDay() + 6) % 7;
 }
 
-async function loadHistory(db: D1Database, profileId: string, occurredOn: string, excludeId: string | null): Promise<PriorWorkout[]> {
-  const rows = await db.prepare(
+interface HistoryRow {
+  id: string;
+  type: string;
+  occurred_on: string;
+  started_at: number | null;
+  ended_at: number | null;
+  duration_min: number;
+  intensity: Intensity | null;
+  status: "submitted" | "approved";
+  client_request_id: string | null;
+  awarded: number;
+}
+
+function historyStatement(db: D1Database, profileId: string, occurredOn: string, excludeId: string | null) {
+  return db.prepare(
     `SELECT w.id, w.type, w.occurred_on, w.started_at, w.ended_at, w.duration_min, w.intensity, w.status,
             w.client_request_id, COALESCE(SUM(t.points_tenths), 0) AS awarded
      FROM workouts w
@@ -439,19 +459,11 @@ async function loadHistory(db: D1Database, profileId: string, occurredOn: string
        AND w.occurred_on >= ? AND w.occurred_on <= ?
        AND (? IS NULL OR w.id != ?)
      GROUP BY w.id, w.type, w.occurred_on, w.started_at, w.ended_at, w.duration_min, w.intensity, w.status, w.client_request_id`,
-  ).bind(profileId, addDays(occurredOn, -6), addDays(occurredOn, 6), excludeId, excludeId).all<{
-    id: string;
-    type: string;
-    occurred_on: string;
-    started_at: number | null;
-    ended_at: number | null;
-    duration_min: number;
-    intensity: Intensity | null;
-    status: "submitted" | "approved";
-    client_request_id: string | null;
-    awarded: number;
-  }>();
-  return rows.results.map((row) => ({
+  ).bind(profileId, addDays(occurredOn, -6), addDays(occurredOn, 6), excludeId, excludeId);
+}
+
+function presentHistory(rows: HistoryRow[]): PriorWorkout[] {
+  return rows.map((row) => ({
     id: row.id,
     type: row.type,
     occurredOn: row.occurred_on,
@@ -463,6 +475,21 @@ async function loadHistory(db: D1Database, profileId: string, occurredOn: string
     clientRequestId: row.client_request_id,
     awardedPointsTenths: Number(row.awarded),
   }));
+}
+
+async function loadHistory(db: D1Database, profileId: string, occurredOn: string, excludeId: string | null): Promise<PriorWorkout[]> {
+  const rows = await historyStatement(db, profileId, occurredOn, excludeId).all<HistoryRow>();
+  return presentHistory(rows.results);
+}
+
+async function submissionReads(db: D1Database, profileId: string, date: string, requestId: string | null) {
+  if (!requestId) return { existing: null, history: await loadHistory(db, profileId, date, null) };
+  const [matches, history] = await db.batch([
+    db.prepare("SELECT id FROM workouts WHERE player_profile_id=? AND client_request_id=?").bind(profileId, requestId),
+    historyStatement(db, profileId, date, null),
+  ]);
+  const existing = matches!.results[0] as { id: string } | undefined;
+  return { existing, history: existing ? [] : presentHistory(history!.results as HistoryRow[]) };
 }
 
 function draftFromBody(body: Record<string, unknown>, today: string): {
@@ -603,14 +630,18 @@ async function historyPage(db: D1Database, profileId: string, limit: number, cur
     ? JSON.stringify([last.occurred_on, last.created_at, last.id]) : null };
 }
 
-async function workoutPayload(db: D1Database, id: string, profileId: string, extra?: { idempotent: boolean }) {
-  const row = await db.prepare(
+function workoutStatement(db: D1Database, id: string, profileId: string) {
+  return db.prepare(
     `SELECT w.id,w.type,COALESCE(json_extract(r.config_json,'$.types.' || w.type || '.label'),replace(w.type,'_',' ')) AS activity_label,
        w.occurred_on,w.duration_min,w.intensity,w.distance_m,w.notes,w.status,w.review_note,w.created_at,
        (SELECT COALESCE(SUM(t.points_tenths),0) FROM point_transactions t WHERE t.workout_id=w.id) AS points_tenths
      FROM workouts w LEFT JOIN scoring_rule_versions r ON r.id=w.rule_version_id
      WHERE w.player_profile_id=? AND w.id=?`,
-  ).bind(profileId, id).first<WorkoutRow>();
+  ).bind(profileId, id);
+}
+
+async function workoutPayload(db: D1Database, id: string, profileId: string, extra?: { idempotent: boolean }) {
+  const row = await workoutStatement(db, id, profileId).first<WorkoutRow>();
   return { workout: row ? presentWorkout(row) : null, idempotent: extra?.idempotent ?? false };
 }
 

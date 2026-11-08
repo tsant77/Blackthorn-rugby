@@ -7,11 +7,13 @@ This follow-up targets the 10 ms Workers Free budget without changing scoring ru
 - History is keyset-paginated: 20 entries by default, at most 25, with deterministic date/created-time/ID ordering. `nextCursor` reaches older pages. Every query remains scoped to the session's profile; a cursor conveys no authority. Invalid cursors and limits return 400.
 - The mobile log offers “Load older sessions”. Home asks D1 for three counted sessions before limiting, and does not fetch scoring context. Full history remains accessible; no stored records are truncated.
 - Deletion reads ownership, revision and ledger net together, then retains the existing revision guard, reversal, consistency updates and audit in one D1 transaction. It uses the recorded scoring version. Legacy null versions retain the previous current-rule fallback. Permanent badge awards need no lifetime rescan after deletion; badge reads still synchronize newly configured awards.
-- Submission/edit responses select one workout and its ledger total. Workout-only requests avoid computing leaderboard date ranges. Rule, measurement, injury, ownership, CSRF and permission validation remain enabled.
+- Submission batches idempotency and bounded history reads. Submission/edit responses select one workout and its ledger total inside the scoring transaction, after cap/consistency/audit writes, avoiding an extra round trip and a competing-mutation response race. Workout-only requests avoid computing leaderboard date ranges. Rule, measurement, injury, ownership, CSRF and permission validation remain enabled.
 - Training-load checks use seven rolling sums over thirteen calendar days, with the same counted statuses, overlapping windows, strict threshold and individual rounding. Tests compare results against exhaustive windows at boundary values.
 - Badge statistics return one aggregated row from D1. Indexed streak existence checks stop at the first missing date. The exact lifetime counts, points and streak are preserved. Badge and notification writes share an idempotent transaction.
 
 No schema migration or scoring publication is required. Existing daily-cap SQL, week snapshots, revision guards, immutable ledger/audit triggers and security checks remain in place. Do not move accounting to deferred background work to mask CPU use.
+
+The first optimized 114-request actual-Worker run reduced history/deletion/submission CPU maxima to 7/5/10 ms. Exactly 10 ms does not pass the strict below-10-ms criterion. The follow-up read batching and transactional response selection must be measured again; retain the earlier result in the evidence.
 
 ## Development deployment and measurement
 
