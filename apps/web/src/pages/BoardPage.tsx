@@ -23,24 +23,33 @@ export function BoardPage() {
   const [filter, setFilter] = useState("all");
   const [positions, setPositions] = useState<RosterPosition[]>([]);
   const [standings, setStandings] = useState<Standing[]>([]);
+  const [loading, setLoading] = useState(true);
   const [range, setRange] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void api<{ positions: RosterPosition[] }>("/api/roster-options").then((body) => setPositions(body.positions));
+    void api<{ positions: RosterPosition[] }>("/api/roster-options").then((body) => setPositions(body.positions)).catch(() => setError("Could not load position filters."));
   }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    setLoading(true);
+    setStandings([]);
+    setRange("");
     const params = new URLSearchParams({ period });
     if (filter === "group_forwards" || filter === "group_backs" || filter === "coaches") params.set("groupId", filter);
     else if (filter !== "all") params.set("positionId", filter);
-    void api<{ start: string; end: string; standings: Standing[] }>(`/api/leaderboard?${params}`).then((body) => {
+    void api<{ start: string; end: string; standings: Standing[] }>(`/api/leaderboard?${params}`, { signal: controller.signal }).then((body) => {
+      if (!active) return;
       setStandings(body.standings);
       setRange(displayRange(body.start, body.end));
       setError(null);
     }).catch((caught: unknown) => {
+      if (!active) return;
       setError(caught instanceof ApiError ? caught.message : "Could not load the board.");
-    });
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; controller.abort(); };
   }, [period, filter]);
 
   return (
@@ -76,8 +85,9 @@ export function BoardPage() {
         </select>
       </label>
       {error ? <p role="alert" className="text-gold-soft">{error}</p> : null}
-      {standings.length === 0 ? <p className="text-quiet">No scored sessions in this view yet.</p> : null}
-      <ol className="board-list flex flex-col">
+      {!loading && !error && standings.length === 0 ? <p className="text-quiet">No scored sessions in this view yet.</p> : null}
+      {loading ? <p role="status" className="text-sm text-quiet">Loading standings…</p> : null}
+      <ol aria-busy={loading} className="board-list flex flex-col">
         {standings.map((row) => (
           <li key={row.profile_id} className={`standing-row ${row.profile_id === me?.profile?.id ? "text-gold-soft" : ""}`}>
             <span className="w-8 font-display text-2xl text-gold">{row.rank}</span>

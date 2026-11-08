@@ -54,7 +54,7 @@ describe("email-free team accounts", () => {
     expect((await register(token, "WING.ONE")).status).toBe(409);
     const users = await env.DB.prepare("SELECT COUNT(*) AS n FROM users").bind().first<{ n: number }>();
     expect(users?.n).toBe(3); // no orphan user from the duplicate
-    await expect(env.DB.prepare("INSERT INTO credentials(user_id,username,created_at,updated_at) VALUES('not-real','WING.ONE',0,0)").bind().run()).rejects.toThrow();
+    await expect(env.DB.prepare("UPDATE credentials SET username='WING.ONE' WHERE username='second.wing'").bind().run()).rejects.toThrow(/UNIQUE/);
     const stored = await env.DB.prepare("SELECT token_hash FROM team_registration").bind().first<{ token_hash: string }>();
     expect(stored?.token_hash).not.toBe(token);
   });
@@ -114,9 +114,13 @@ describe("email-free team accounts", () => {
     expect((await request("/api/members", undefined, player, "GET")).status).toBe(403);
     expect((await request("/api/auth/login", { username: "wing.one", password }, "", "POST", { origin: "https://evil.test" })).status).toBe(403);
     expect((await request("/api/auth/register", { token: "a".repeat(9000) })).status).toBe(413);
-    await env.DB.prepare("UPDATE club_memberships SET status='deactivated' WHERE role='player'").bind().run();
+    const me = await (await request("/api/me", undefined, player, "GET")).json() as { membership: { id: string } };
+    expect((await request("/api/members/" + me.membership.id, { status: "deactivated" }, admin, "PATCH")).status).toBe(200);
     expect((await request("/api/auth/login", { username: "wing.one", password })).status).toBe(401);
     expect((await request("/api/me", undefined, player, "GET")).status).toBe(401);
+    await request("/api/members/" + me.membership.id, { status: "active" }, admin, "PATCH");
+    expect((await request("/api/me", undefined, player, "GET")).status).toBe(401);
+    expect((await request("/api/auth/login", { username: "wing.one", password })).status).toBe(200);
   });
 
   it("limits login by account across IPs and registration by IP", async () => {
@@ -127,7 +131,7 @@ describe("email-free team accounts", () => {
     await env.DB.prepare("INSERT INTO auth_limits(bucket,window_start,attempts) VALUES(?,?,15)").bind("login-account:"+await sha256Hex("target"),start).run();
     expect((await request("/api/auth/login", { username: "target", password }, "", "POST", { "cf-connecting-ip": "203.0.113.1" })).status).toBe(429);
     expect((await request("/api/auth/login", { username: "target", password }, "", "POST", { "cf-connecting-ip": "203.0.113.2" })).status).toBe(429);
-    for (let i=0;i<10;i++) await request("/api/auth/register", { token: "invalid" });
+    for (let i=0;i<60;i++) await request("/api/auth/register", { token: "invalid" });
     const limited = await register(token);
     expect(limited.status).toBe(429);
     expect(limited.headers.get("retry-after")).toBeTruthy();
@@ -160,9 +164,30 @@ describe("email-free team accounts", () => {
     expect((await request("/api/auth/reset/options", { token: expired })).status).toBe(410);
   });
 
+  it("allows admin recovery to establish credentials for a legacy player, but denies coaches", async () => {
+    const invite = await request("/api/share-invites", { label: "Recovery Wing", role: "player" }, admin);
+    const joined = await app.request((await invite.json() as { url: string }).url, { headers: { cookie: admin } }, env);
+    expect((await request("/api/me", undefined, admin, "GET")).status).toBe(200);
+    const player = cookie(joined);
+    const me = await (await request("/api/me", undefined, player, "GET")).json() as { user: { id: string } };
+    const coachInvite = await request("/api/share-invites", { label: "Assistant", role: "coach" }, admin);
+    const coach = cookie(await app.request((await coachInvite.json() as { url: string }).url, {}, env));
+    expect((await request("/api/password-resets", { userId: me.user.id }, coach)).status).toBe(403);
+    expect((await request("/api/registration", { action: "rotate" }, coach)).status).toBe(403);
+    const reset = await request("/api/password-resets", { userId: me.user.id }, admin);
+    const token = new URL((await reset.json() as { url: string }).url).hash.slice(7);
+    expect(await (await request("/api/auth/reset/options", { token })).json()).toEqual({ needsUsername: true });
+    expect((await request("/api/auth/reset", { token, password, confirmPassword: password })).status).toBe(400);
+    expect((await request("/api/auth/reset", { token, username: "recovered.wing", password, confirmPassword: password })).status).toBe(200);
+    expect((await request("/api/auth/login", { username: "recovered.wing", password })).status).toBe(200);
+    expect((await request("/api/signin-links", { userId: me.user.id }, coach)).status).toBe(403);
+    expect((await request("/api/signin-links", { userId: me.user.id }, admin)).status).toBe(201);
+  });
+
   it("migrates a legacy player in place and keeps training data and credentials stable", async () => {
     const invite = await request("/api/share-invites", { label: "Legacy Wing", role: "player" }, admin);
-    const joined = await app.request((await invite.json() as { url: string }).url, {}, env);
+    const joined = await app.request((await invite.json() as { url: string }).url, { headers: { cookie: admin } }, env);
+    expect((await request("/api/me", undefined, admin, "GET")).status).toBe(200);
     let auth = cookie(joined);
     await request("/api/onboarding", { rosterName: "Legacy Wing", positionId: "pos_fullback", injuryStatus: "available" }, auth);
     const workouts = await (await request("/api/workouts", undefined, auth, "GET")).json() as { today: string };

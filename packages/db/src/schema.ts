@@ -408,7 +408,7 @@ export const teamRegistration = sqliteTable("team_registration", {
   createdBy: text("created_by").notNull().references(() => users.id, { onDelete: "restrict" }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-});
+}, table => [check("team_registration_enabled_chk", sql`${table.enabled} IN (0,1)`)]);
 
 export const passwordResets = sqliteTable("password_resets", {
   id: text("id").primaryKey(),
@@ -419,7 +419,7 @@ export const passwordResets = sqliteTable("password_resets", {
   claim: text("claim"),
   createdBy: text("created_by").notNull().references(() => users.id, { onDelete: "restrict" }),
   createdAt: createdAt(),
-});
+}, table => [index("password_resets_user_idx").on(table.userId, table.expiresAt)]);
 
 export const authLimits = sqliteTable("auth_limits", {
   bucket: text("bucket").primaryKey(),

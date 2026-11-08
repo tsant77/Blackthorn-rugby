@@ -441,8 +441,8 @@ async function startSession(c: AppContext, userId: string, now: number, expected
   const hash = await sha256Hex(token);
   const old = getCookie(c, SESSION_COOKIE);
   const results = await c.env.DB.batch([
-    c.env.DB.prepare("UPDATE sessions SET revoked_at=? WHERE token_hash=? AND revoked_at IS NULL")
-      .bind(now, old ? await sha256Hex(old) : ""),
+    c.env.DB.prepare("UPDATE sessions SET revoked_at=? WHERE token_hash=? AND user_id=? AND revoked_at IS NULL")
+      .bind(now, old ? await sha256Hex(old) : "", userId),
     c.env.DB.prepare(`INSERT INTO sessions(id,user_id,token_hash,expires_at,created_at)
       SELECT ?,?,?,?,? WHERE (? IS NULL OR EXISTS(
         SELECT 1 FROM credentials cr JOIN users u ON u.id=cr.user_id

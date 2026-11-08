@@ -37,10 +37,11 @@ export function registerAccountRoutes(
   });
 
   app.post("/api/auth/register", async c => {
-    if (!await throttle(c, "register", 10, 60 * MINUTE)) return limited(c);
+    if (!await throttle(c, "register", 60, 60 * MINUTE)) return limited(c);
     const body = await json(c);
     const link = await registration(c, body?.token);
     if (!link) return c.json({ error: INVALID_LINK }, 410);
+    if (!await throttle(c, "register-team", 200, 60 * MINUTE, link.token_hash)) return limited(c);
     if (await currentSession(c)) return c.json({ error: "You are already signed in. Add credentials from You to keep your existing training history." }, 409);
     const username = normalizeUsername(body?.username);
     const name = typeof body?.fullName === "string" ? body.fullName.trim().replace(/\s+/g, " ") : "";
@@ -254,7 +255,7 @@ function audit(c: C, actor: string, action: string, type: string, id: string, no
 async function json(c: C): Promise<Record<string, unknown> | null> {
   try { const b = await c.req.json(); return b && typeof b === "object" && !Array.isArray(b) ? b : null; } catch { return null; }
 }
-function limited(c: C) { c.header("Retry-After", "900"); return c.json({ error: "Too many attempts. Try again later." }, 429); }
+function limited(c: C) { return c.json({ error: "Too many attempts. Try again later." }, 429); }
 async function throttle(c: C, kind: string, max: number, window = 15 * MINUTE, identity?: string) {
   const ip = c.req.header("cf-connecting-ip") ?? "local";
   const bucket = kind + ":" + await sha256Hex(identity ?? ip);
@@ -265,5 +266,7 @@ async function throttle(c: C, kind: string, max: number, window = 15 * MINUTE, i
     .bind(bucket, start).first<{ attempts: number }>();
   // Bound retention without background jobs or storing raw IP addresses/usernames.
   await c.env.DB.prepare("DELETE FROM auth_limits WHERE window_start<?").bind(Date.now() - 24 * 60 * MINUTE).run();
-  return (row?.attempts ?? max + 1) <= max;
+  const allowed = (row?.attempts ?? max + 1) <= max;
+  if (!allowed) c.header("Retry-After", String(Math.max(1, Math.ceil((start + window - Date.now()) / 1000))));
+  return allowed;
 }

@@ -4,7 +4,7 @@ import { mkdir } from "node:fs/promises";
 import { invitePlayer, useAdmin } from "./account";
 
 const password = "Test rugby training passphrase";
-test.use({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true });
+test.use({ serviceWorkers: "block", viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true });
 
 test("shared registration, password login/recovery, training and mobile refinements", async ({ page, browserName }) => {
   await useAdmin(page);
@@ -27,7 +27,7 @@ test("shared registration, password login/recovery, training and mobile refineme
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   const shots = `docs/screenshots/team-rollout/${browserName}`;
   await mkdir(shots, { recursive: true });
-  await page.screenshot({ path: `${shots}/registration.png`, fullPage: true });
+  await page.screenshot({ path: `${shots}/registration.png`, fullPage: true, animations: "disabled" });
   await page.getByRole("button", { name: "Create player account" }).click();
   await expect(page.getByRole("heading", { name: "Rollout Wing" })).toBeVisible();
 
@@ -36,11 +36,11 @@ test("shared registration, password login/recovery, training and mobile refineme
   await page.getByLabel("Minutes").fill("40");
   await expect(page.getByText("Estimated", { exact: false }).first()).toContainText("6.0");
   const ids: string[] = [];
-  // First request is saved by the server but its response is lost. The retry must reuse its key.
+  // First request is saved but a gateway error replaces its response. Retry must reuse the key.
   await page.route("**/api/workouts", async route => {
     if (route.request().method() !== "POST") { await route.continue(); return; }
     ids.push((route.request().postDataJSON() as { clientRequestId: string }).clientRequestId);
-    if (ids.length === 1) { await route.fetch(); await route.abort(); }
+    if (ids.length === 1) { await route.fetch(); await route.fulfill({ status: 503, json: { error: "Temporary response failure. Please retry." } }); }
     else await route.continue();
   });
   await page.locator(".workout-form").evaluate((form: HTMLFormElement) => { form.requestSubmit(); form.requestSubmit(); });
@@ -52,12 +52,12 @@ test("shared registration, password login/recovery, training and mobile refineme
   expect(ids[0]).toBe(ids[1]);
   const own = await (await page.request.get("/api/workouts")).json() as { workouts: { status: string }[] };
   expect(own.workouts.filter(w => w.status === "submitted")).toHaveLength(1);
-  await page.screenshot({ path: `${shots}/log.png`, fullPage: true });
+  await page.screenshot({ path: `${shots}/log.png`, fullPage: true, animations: "disabled" });
 
   await page.getByRole("link", { name: "Home", exact: true }).click();
   await expect(page.getByLabel("Weekly performance")).toContainText("6.0");
   await expect(page.getByRole("article").filter({ hasText: "Running" })).toBeVisible();
-  await page.screenshot({ path: `${shots}/home.png`, fullPage: true });
+  await page.screenshot({ path: `${shots}/home.png`, fullPage: true, animations: "disabled" });
   await page.getByRole("link", { name: "Board", exact: true }).click();
   await page.getByLabel("Group or position").selectOption({ label: "Backs" });
   await page.getByRole("button", { name: "Month", exact: true }).click();
@@ -65,7 +65,10 @@ test("shared registration, password login/recovery, training and mobile refineme
   await page.getByRole("button", { name: "Offseason", exact: true }).click();
   await expect(page.getByRole("listitem").filter({ hasText: "Rollout Wing" })).toContainText("PTS");
   await page.getByRole("button", { name: "This week", exact: true }).click();
-  await page.screenshot({ path: `${shots}/board.png`, fullPage: true });
+  await expect(page.getByRole("button", { name: "This week", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("status")).toHaveCount(0);
+  await expect(page.getByRole("listitem").filter({ hasText: "Rollout Wing" })).toBeVisible();
+  await page.screenshot({ path: `${shots}/board.png`, fullPage: true, animations: "disabled" });
 
   // Simulate device-provided insets; the implementation itself uses env(safe-area-inset-*).
   await page.addStyleTag({ content: ":root { --safe-top:44px; --safe-bottom:34px; --safe-left:0px; --safe-right:0px; }" });
@@ -95,7 +98,7 @@ test("shared registration, password login/recovery, training and mobile refineme
   await expect(page.getByLabel("Training statistics")).toContainText("6.0");
   await expect(page.getByRole("progressbar", { name: "Progress toward 50 points" })).toHaveAttribute("value", "6");
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-  await page.screenshot({ path: `${shots}/profile.png`, fullPage: true });
+  await page.screenshot({ path: `${shots}/profile.png`, fullPage: true, animations: "disabled" });
   const me = await (await page.request.get("/api/me")).json() as { user: { id: string } };
   expect((await page.request.post("/api/password-resets", { data: { userId: me.user.id } })).status()).toBe(403);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
@@ -142,4 +145,34 @@ test("legacy player establishes credentials without losing their profile", async
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Legacy Rollout" })).toBeVisible();
+});
+
+test("leaderboard keeps the latest filter when earlier requests finish late", async ({ page }) => {
+  await useAdmin(page);
+  let release!: () => void;
+  let monthStarted!: () => void;
+  let monthFinished!: () => void;
+  const waiting = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { monthStarted = resolve; });
+  const finished = new Promise<void>(resolve => { monthFinished = resolve; });
+  await page.route("**/api/leaderboard?*", async route => {
+    const period = new URL(route.request().url()).searchParams.get("period");
+    if (period === "month") { monthStarted(); await waiting; }
+    await route.fulfill({ json: { start: "2026-11-02", end: "2026-11-08", standings: [{
+      rank: 1, previousRank: 1, movement: 0, profile_id: "synthetic-filter-test",
+      roster_name: period === "offseason" ? "Current Season" : period === "month" ? "Stale Month" : "Current Week",
+      position_name: "Fullback", group_name: "Backs", points_tenths: 60, workout_count: 1,
+    }] } }).catch(() => {}); // An intentionally aborted month request has no response consumer.
+    if (period === "month") monthFinished();
+  });
+  await page.goto("/board");
+  await expect(page.getByText("Current Week", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Month", exact: true }).click();
+  await started;
+  await page.getByRole("button", { name: "Offseason", exact: true }).click();
+  await expect(page.getByText("Current Season", { exact: true })).toBeVisible();
+  release();
+  await finished;
+  await expect(page.getByText("Current Season", { exact: true })).toBeVisible();
+  await expect(page.getByText("Stale Month", { exact: true })).toHaveCount(0);
 });

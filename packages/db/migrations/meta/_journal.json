@@ -43,6 +43,13 @@
       "when": 1794156825261,
       "tag": "0005_thankful_calypso",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1794168467162,
+      "tag": "0006_team_accounts",
+      "breakpoints": true
     }
   ]
 }
