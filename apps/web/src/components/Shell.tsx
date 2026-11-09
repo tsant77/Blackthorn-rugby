@@ -39,9 +39,7 @@ export function Shell() {
     return (
       <div className="min-h-screen bg-canvas text-ink">
         <Header />
-        {pathname === "/" ? <div className="mx-auto max-w-lg px-s2 pt-s2"><Link to="/suggestions" className="block rounded-md border border-gold bg-raised p-s2 text-sm"><strong>💡 Have an idea?</strong> Share feedback and vote on team suggestions →</Link></div> : null}
         <Outlet />
-        {announce ? <dialog open aria-label="New team suggestions feature" className="fixed inset-0 z-50 m-auto w-[min(90vw,400px)] rounded-lg border border-gold bg-raised p-s3 text-ink shadow-xl"><h2 className="font-heading text-xl font-semibold">💡 Team Suggestions are here!</h2><p className="my-s2">Share ideas, report bugs, and vote on improvements to Blackthorn Rugby.</p><div className="flex flex-wrap gap-s2"><Link className="save-workout" to="/suggestions" onClick={()=>void dismissAnnouncement()}>Share an idea</Link><button className="secondary-button" type="button" onClick={()=>void dismissAnnouncement()}>Not now</button></div></dialog> : null}
       </div>
     );
   }
@@ -90,7 +88,9 @@ export function Shell() {
           {me?.membership.role === "admin" ? <SideLink to="/invite">Invite</SideLink> : null}
           </nav>
         </dialog>
+        {pathname === "/" ? <div className="mx-auto max-w-lg px-s2 pt-s2"><Link to="/suggestions" className="block rounded-md border border-gold bg-raised p-s2 text-sm"><strong>💡 Have an idea?</strong> Share feedback and vote on team suggestions →</Link></div> : null}
         <Outlet />
+        {announce && pathname === "/" ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-s3"><section role="dialog" aria-modal="true" aria-label="New team suggestions feature" className="w-full max-w-sm rounded-lg border border-gold bg-raised p-s3 text-ink shadow-xl"><h2 className="font-heading text-xl font-semibold">💡 Team Suggestions are here!</h2><p className="my-s2">Share ideas, report bugs, and vote on improvements to Blackthorn Rugby.</p><div className="flex flex-wrap gap-s2"><Link className="save-workout" to="/suggestions" onClick={()=>void dismissAnnouncement()}>Share an idea</Link><button className="secondary-button" type="button" onClick={()=>void dismissAnnouncement()}>Not now</button></div></section></div> : null}
       </div>
       <nav aria-label="Primary" className="bottom-nav fixed inset-x-0 bottom-0 border-t border-line bg-raised md:hidden">
         <ul className="grid grid-cols-4">
