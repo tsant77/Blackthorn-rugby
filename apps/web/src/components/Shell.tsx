@@ -88,7 +88,7 @@ export function Shell() {
           {me?.membership.role === "admin" ? <SideLink to="/invite">Invite</SideLink> : null}
           </nav>
         </dialog>
-        {pathname === "/" ? <div className="mx-auto max-w-lg px-s2 pt-s2"><Link to="/suggestions" className="block rounded-md border border-gold bg-raised p-s2 text-sm"><strong>💡 Have an idea?</strong> Share feedback and vote on team suggestions →</Link></div> : null}
+        {pathname === "/" ? <nav aria-label="Suggestions shortcut" className="mx-auto max-w-lg px-s2 pt-s2"><Link to="/suggestions" className="block rounded-md border border-gold bg-raised p-s2 text-sm"><strong>💡 Have an idea?</strong> Share feedback and vote on team suggestions →</Link></nav> : null}
         <Outlet />
         {announce && pathname === "/" ? <div className="fixed bottom-20 right-s2 z-40 w-[min(90vw,360px)] md:bottom-s3"><section role="region" aria-label="New team suggestions feature" className="w-full max-w-sm rounded-lg border border-gold bg-raised p-s3 text-ink shadow-xl"><h2 className="font-heading text-xl font-semibold">💡 Team Suggestions are here!</h2><p className="my-s2">Share ideas, report bugs, and vote on improvements to Blackthorn Rugby.</p><div className="flex flex-wrap gap-s2"><Link className="save-workout" to="/suggestions" onClick={()=>void dismissAnnouncement()}>Share an idea</Link><button className="secondary-button" type="button" onClick={()=>void dismissAnnouncement()}>Not now</button></div></section></div> : null}
       </div>
