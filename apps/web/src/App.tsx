@@ -1,3 +1,4 @@
+import { SuggestionsPage } from "./pages/SuggestionsPage";
 import { ScoringSettingsPage } from "./pages/ScoringSettingsPage";
 import { RouteFocus } from "./components/RouteFocus";
 import { PlayerLoginPage } from "./pages/PlayerLoginPage";
@@ -48,6 +49,7 @@ export function App() {
               <Route path="/moderate" element={<ModeratePage />} />
               <Route path="/members" element={<MembersPage />} />
               <Route path="/rules" element={<RulesPage />} />
+              <Route path="/suggestions" element={<SuggestionsPage />} />
               <Route path="/scoring-settings" element={<ScoringSettingsPage />} />
               <Route path="/challenges" element={<ChallengesPage />} />
               <Route path="/inbox" element={<InboxPage />} />

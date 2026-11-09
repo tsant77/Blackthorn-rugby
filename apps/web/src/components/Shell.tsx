@@ -1,7 +1,8 @@
-import { useRef, useLayoutEffect, useState } from "react";
+import { useRef, useLayoutEffect, useState, useEffect } from "react";
 import { Menu, X, House, Plus, Trophy, UserRound } from "lucide-react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useSession } from "../session";
+import { api } from "../api";
 
 const items = [
   { to: "/", label: "Home", icon: House, end: true },
@@ -13,6 +14,9 @@ const items = [
 export function Shell() {
   const { me } = useSession();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [announce, setAnnounce] = useState(false);
+  useEffect(() => { if (!me?.needsOnboarding && !me?.pendingApproval) void api<{show:boolean}>("/api/suggestions/announcement").then(r => setAnnounce(r.show)).catch(() => {}); }, [me?.user.id,me?.needsOnboarding,me?.pendingApproval]);
+  async function dismissAnnouncement(){setAnnounce(false);try{await api("/api/suggestions/announcement/dismiss",{method:"POST"})}catch{setAnnounce(true)}}
   const menu = useRef<HTMLDialogElement>(null);
   const { pathname } = useLocation();
   const route = useRef(pathname);
@@ -50,6 +54,7 @@ export function Shell() {
           <SideLink to="/team">Team</SideLink>
           <SideLink to="/challenges">Challenges</SideLink>
           <SideLink to="/inbox">Inbox</SideLink>
+          <SideLink to="/suggestions">Suggestions</SideLink>
           {staff ? <SideLink to="/moderate">Moderate</SideLink> : null}
           {staff ? <SideLink to="/members">Members</SideLink> : null}
           {me?.membership.role === "admin" ? <SideLink to="/rules">Rules</SideLink> : null}
@@ -73,6 +78,7 @@ export function Shell() {
             <SideLink to="/team">Team</SideLink>
             <SideLink to="/challenges">Challenges</SideLink>
             <SideLink to="/inbox">Inbox</SideLink>
+            <SideLink to="/suggestions">Suggestions</SideLink>
             {staff ? <SideLink to="/moderate">Moderate</SideLink> : null}
             {staff ? <SideLink to="/members">Members</SideLink> : null}
             {me?.membership.role === "admin" ? <SideLink to="/rules">Rules</SideLink> : null}
@@ -82,7 +88,9 @@ export function Shell() {
           {me?.membership.role === "admin" ? <SideLink to="/invite">Invite</SideLink> : null}
           </nav>
         </dialog>
+        {pathname === "/" ? <nav aria-label="Suggestions shortcut" className="mx-auto max-w-lg px-s2 pt-s2"><Link to="/suggestions" className="block rounded-md border border-gold bg-raised p-s2 text-sm"><strong>💡 Have an idea?</strong> Share feedback and vote on team suggestions →</Link></nav> : null}
         <Outlet />
+        {announce && pathname === "/" ? <div className="fixed bottom-20 right-s2 z-40 w-[min(90vw,360px)] md:bottom-s3"><section role="region" aria-label="New team suggestions feature" className="w-full max-w-sm rounded-lg border border-gold bg-raised p-s3 text-ink shadow-xl"><h2 className="font-heading text-xl font-semibold">💡 Team Suggestions are here!</h2><p className="my-s2">Share ideas, report bugs, and vote on improvements to Blackthorn Rugby.</p><div className="flex flex-wrap gap-s2"><Link className="save-workout" to="/suggestions" onClick={()=>void dismissAnnouncement()}>Share an idea</Link><button className="secondary-button" type="button" onClick={()=>void dismissAnnouncement()}>Not now</button></div></section></div> : null}
       </div>
       <nav aria-label="Primary" className="bottom-nav fixed inset-x-0 bottom-0 border-t border-line bg-raised md:hidden">
         <ul className="grid grid-cols-4">
