@@ -1,7 +1,8 @@
-import { useRef, useLayoutEffect, useState } from "react";
+import { useRef, useLayoutEffect, useState, useEffect } from "react";
 import { Menu, X, House, Plus, Trophy, UserRound } from "lucide-react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useSession } from "../session";
+import { api } from "../api";
 
 const items = [
   { to: "/", label: "Home", icon: House, end: true },
@@ -13,6 +14,9 @@ const items = [
 export function Shell() {
   const { me } = useSession();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [announce, setAnnounce] = useState(false);
+  useEffect(() => { if (!me?.needsOnboarding && !me?.pendingApproval) void api<{show:boolean}>("/api/suggestions/announcement").then(r => setAnnounce(r.show)).catch(() => {}); }, [me?.user.id,me?.needsOnboarding,me?.pendingApproval]);
+  async function dismissAnnouncement(){setAnnounce(false);try{await api("/api/suggestions/announcement/dismiss",{method:"POST"})}catch{setAnnounce(true)}}
   const menu = useRef<HTMLDialogElement>(null);
   const { pathname } = useLocation();
   const route = useRef(pathname);
@@ -35,7 +39,9 @@ export function Shell() {
     return (
       <div className="min-h-screen bg-canvas text-ink">
         <Header />
+        {pathname === "/" ? <div className="mx-auto max-w-lg px-s2 pt-s2"><Link to="/suggestions" className="block rounded-md border border-gold bg-raised p-s2 text-sm"><strong>💡 Have an idea?</strong> Share feedback and vote on team suggestions →</Link></div> : null}
         <Outlet />
+        {announce ? <dialog open aria-label="New team suggestions feature" className="fixed inset-0 z-50 m-auto w-[min(90vw,400px)] rounded-lg border border-gold bg-raised p-s3 text-ink shadow-xl"><h2 className="font-heading text-xl font-semibold">💡 Team Suggestions are here!</h2><p className="my-s2">Share ideas, report bugs, and vote on improvements to Blackthorn Rugby.</p><div className="flex flex-wrap gap-s2"><Link className="save-workout" to="/suggestions" onClick={()=>void dismissAnnouncement()}>Share an idea</Link><button className="secondary-button" type="button" onClick={()=>void dismissAnnouncement()}>Not now</button></div></dialog> : null}
       </div>
     );
   }
@@ -50,6 +56,7 @@ export function Shell() {
           <SideLink to="/team">Team</SideLink>
           <SideLink to="/challenges">Challenges</SideLink>
           <SideLink to="/inbox">Inbox</SideLink>
+          <SideLink to="/suggestions">Suggestions</SideLink>
           {staff ? <SideLink to="/moderate">Moderate</SideLink> : null}
           {staff ? <SideLink to="/members">Members</SideLink> : null}
           {me?.membership.role === "admin" ? <SideLink to="/rules">Rules</SideLink> : null}
@@ -73,6 +80,7 @@ export function Shell() {
             <SideLink to="/team">Team</SideLink>
             <SideLink to="/challenges">Challenges</SideLink>
             <SideLink to="/inbox">Inbox</SideLink>
+            <SideLink to="/suggestions">Suggestions</SideLink>
             {staff ? <SideLink to="/moderate">Moderate</SideLink> : null}
             {staff ? <SideLink to="/members">Members</SideLink> : null}
             {me?.membership.role === "admin" ? <SideLink to="/rules">Rules</SideLink> : null}
