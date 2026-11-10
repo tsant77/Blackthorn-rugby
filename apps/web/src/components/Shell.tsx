@@ -52,6 +52,7 @@ export function Shell() {
             <SideLink key={item.to} to={item.to} end={item.end}>{item.label}</SideLink>
           ))}
           <SideLink to="/team">Team</SideLink>
+          <SideLink to="/activity">Team activity</SideLink>
           <SideLink to="/challenges">Challenges</SideLink>
           <SideLink to="/inbox">Inbox</SideLink>
           <SideLink to="/suggestions">Suggestions</SideLink>
@@ -76,6 +77,7 @@ export function Shell() {
           </div>
           <nav aria-label="Club" className="mt-s2 flex flex-col gap-s1" onClick={(event) => { if ((event.target as HTMLElement).closest("a")) setMenuOpen(false); }}>
             <SideLink to="/team">Team</SideLink>
+            <SideLink to="/activity">Team activity</SideLink>
             <SideLink to="/challenges">Challenges</SideLink>
             <SideLink to="/inbox">Inbox</SideLink>
             <SideLink to="/suggestions">Suggestions</SideLink>
