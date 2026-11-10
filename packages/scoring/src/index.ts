@@ -1,6 +1,7 @@
 export { addDays, civilDateInTimeZone, isRealCivilDate } from "./dates";
 export { METERS_PER_MILE, metersToMiles, milesToMeters } from "./distance";
 export { defaultRule, legacyRule } from "./defaults";
+export { metRule, workoutFormulaTenths, MET_REFERENCES } from "./met";
 export {
   formatPoints,
   formulaTenths,

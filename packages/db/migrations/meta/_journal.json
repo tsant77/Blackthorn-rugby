@@ -64,6 +64,13 @@
       "when": 1794172051773,
       "tag": "0008_fitness_scoring",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1794284228520,
+      "tag": "0010_performance_tracking",
+      "breakpoints": true
     }
   ]
 }

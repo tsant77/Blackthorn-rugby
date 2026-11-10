@@ -1,3 +1,4 @@
+import { workoutFormulaTenths } from "./met";
 import { addDays, civilDateInTimeZone, compareCivil, isRealCivilDate } from "./dates";
 import type {
   Intensity,
@@ -111,13 +112,8 @@ function reject(
 function award(input: ScoreInput): ScoreDecision {
   const draft = input.workout;
   const rule = input.rule;
-  const typeRule = rule.types[draft.type] as TypeRule;
   const intensity = (draft.intensity ?? "moderate") as Intensity;
-  const gross = formulaTenths(
-    draft.durationMin,
-    typeRule.multiplierHundredths,
-    rule.intensityHundredths[intensity],
-  );
+  const gross = workoutFormulaTenths(rule, draft.type, draft.durationMin, intensity);
   const afterSession = Math.min(gross, rule.sessionCapTenths);
   const remaining = Math.max(0, rule.dailyCapTenths - sameDayPoints(input));
   const awarded = Math.min(afterSession, remaining);
@@ -178,6 +174,7 @@ export function validateRule(rule: ScoringRule | undefined): string | null {
   if (!inRange(rule.maxLoadGrams, 1, 500_000)) return "Load limit is outside the allowed range.";
   if (!rule.types || typeof rule.types !== "object" || Array.isArray(rule.types)) return "Scoring rule has no workout types.";
 
+  if (rule.scoringModel !== undefined && rule.scoringModel !== "met-v1") return "Unknown scoring model.";
   const entries = Object.entries(rule.types);
   if (entries.length < 1 || entries.length > 32) return "Configure 1–32 activity types.";
   for (const [name, typeRule] of entries) {
@@ -186,6 +183,7 @@ export function validateRule(rule: ScoringRule | undefined): string | null {
     if (typeRule.label !== undefined && (typeof typeRule.label !== "string" || !typeRule.label.trim() || typeRule.label.length > 60)) return "Activity labels must contain 1–60 characters.";
     if (typeRule.enabled !== undefined && typeof typeRule.enabled !== "boolean") return "Invalid activity state.";
     if (typeRule.categories !== undefined && (!Array.isArray(typeRule.categories) || !typeRule.categories.length || new Set(typeRule.categories).size !== typeRule.categories.length || typeRule.categories.some(v => !FITNESS_CATEGORIES.includes(v)))) return "Choose valid training categories.";
+    if (rule.scoringModel === "met-v1" && !inRange(typeRule.metHundredths, 100, 2500)) return "MET values must be 1–25.";
     if (typeof typeRule.allowsDistance !== "boolean") return "Invalid distance setting.";
     for (const key of ["maxDistanceM", "minPaceSecPerKm", "minSplitSecPer500"] as const) if (typeRule[key] !== null && !inRange(typeRule[key], 1, 200_000)) return "Invalid measurement limit.";
     if (!typeRule || !inRange(typeRule.multiplierHundredths, 1, 10_000)) {

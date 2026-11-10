@@ -1,3 +1,4 @@
+import { MyProgress } from "../components/MyProgress";
 import { TrainingBalance, type Balance } from "../components/TrainingBalance";
 import { ScoringHistory } from "../components/ScoringHistory";
 import { Award, Flame, Trophy, Medal, Footprints, Layers, LockKeyhole, Check } from "lucide-react";
@@ -102,6 +103,7 @@ export function ProfilePage() {
         </ul>
       </section>
       {me?.profile ? <><TrainingBalance balance={balance} /><ScoringHistory /></> : null}
+      {me?.profile ? <MyProgress /> : null}
       <AccountCredentials />
       {me?.profile ? (
         <section className="flex flex-col gap-s2 rounded-md border border-line bg-raised p-s2">

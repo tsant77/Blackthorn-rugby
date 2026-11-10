@@ -107,6 +107,7 @@ export function HomePage() {
           : recent.status === "error" ? <p role="alert" className="error-banner">Could not load recent activity.</p>
           : recent.workouts.length ? recent.workouts.map((workout) => <article key={workout.id} className="session-card"><div><h3 className="font-heading font-semibold capitalize">{workout.activity_label ?? workout.type.replaceAll("_", " ")}</h3><p className="text-sm text-quiet">{displayDate(workout.occurred_on)} · {workout.duration_min} min</p></div><span className="font-display text-2xl text-gold">{formatPoints(workout.points_tenths)} <span className="font-body text-xs">PTS</span></span></article>) : <p className="text-sm text-quiet">Your first session starts the story. Log a workout to get going.</p>}
       </section> : null}
+      <Link to="/activity" className="rounded-md border border-line px-s2 py-s1 text-center font-heading font-semibold">See team workouts</Link>
       <Link to="/team" className="rounded-md border border-line px-s2 py-s1 text-center font-heading font-semibold">Team dashboard</Link>
       {role === "admin" ? (
         <Link to="/invite" className="rounded-md bg-gold px-s2 py-s1 text-center font-heading font-semibold text-forest">Invite a player</Link>

@@ -174,6 +174,7 @@ export const playerProfiles = sqliteTable("player_profiles", {
   id: text("id").primaryKey(),
   membershipId: text("membership_id").notNull().references(() => clubMemberships.id, { onDelete: "restrict" }),
   rosterName: text("roster_name").notNull(),
+  performancePublic: integer("performance_public", { mode: "boolean" }).notNull().default(false),
   positionId: text("position_id").references(() => positions.id, { onDelete: "restrict" }),
   groupId: text("group_id").references(() => groups.id, { onDelete: "restrict" }),
   jerseyNumber: integer("jersey_number"),
@@ -246,6 +247,8 @@ export const workouts = sqliteTable("workouts", {
   durationMin: integer("duration_min").notNull(),
   intensity: text("intensity"),
   distanceM: integer("distance_m"),
+  calories: integer("calories"),
+  calorieSource: text("calorie_source"),
   notes: text("notes"),
   status: text("status").notNull(),
   clientRequestId: text("client_request_id"),
@@ -263,6 +266,8 @@ export const workouts = sqliteTable("workouts", {
   uniqueIndex("workouts_idempotency_unique")
     .on(table.playerProfileId, table.clientRequestId)
     .where(sql`${table.clientRequestId} IS NOT NULL`),
+  check("workouts_calories_chk", sql`${table.calories} IS NULL OR ${table.calories} BETWEEN 1 AND 10000`),
+  check("workouts_calorie_source_chk", sql`${table.calorieSource} IS NULL OR ${table.calorieSource} IN ('device','estimated')`),
   check("workouts_duration_chk", sql`${table.durationMin} BETWEEN 1 AND 240`),
   check("workouts_status_chk", sql`${table.status} IN ('submitted', 'approved', 'rejected', 'voided')`),
   check(
@@ -284,6 +289,7 @@ export const workoutExercises = sqliteTable("workout_exercises", {
   sortOrder: integer("sort_order").notNull(),
   createdAt: createdAt(),
 }, (table) => [
+  index("workout_exercises_record_idx").on(table.name, table.reps, table.workoutId, table.loadGrams),
   index("workout_exercises_workout_idx").on(table.workoutId, table.sortOrder),
   index("workout_exercises_club_idx").on(table.clubId),
 ]);

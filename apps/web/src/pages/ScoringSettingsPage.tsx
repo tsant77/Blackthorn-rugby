@@ -1,3 +1,4 @@
+import { MetScoring } from "../components/MetScoring";
 import { useEffect, useState, type FormEvent } from "react";
 import {
   defaultRule,
@@ -50,7 +51,7 @@ export function ScoringSettingsPage() {
     setData(body);
     setDate(body.today);
     // Start with the requested fitness rates, retaining any historical custom identifiers.
-    setConfig({
+    setConfig(body.current.scoringModel === "met-v1" ? body.current : {
       ...body.defaults,
       types: { ...body.current.types, ...body.defaults.types },
     });
@@ -140,8 +141,9 @@ export function ScoringSettingsPage() {
   return (
     <main className="mx-auto flex max-w-lg flex-col gap-s3 px-s2 py-s4">
       <h1 className="font-heading text-2xl font-semibold">Scoring Settings</h1>
+      <MetScoring onApplied={()=>void load()} />
       <p className="text-sm text-quiet">
-        Changes create a new version for workouts on or after the effective
+        The MET switch above recalculates existing workouts. Other changes below create a new version for workouts on or after the effective
         date. Existing awards stay unchanged; edits use their original scoring
         version. Rest and recovery matter.
       </p>
@@ -208,18 +210,18 @@ export function ScoringSettingsPage() {
                     />
                   </label>
                   <label className="field">
-                    Points per 10 minutes
+                    {config.scoringModel === "met-v1" ? "Reference MET" : "Points per 10 minutes"}
                     <input
-                      aria-label={`Points per 10 minutes for ${id}`}
+                      aria-label={`${config.scoringModel === "met-v1" ? "Reference MET" : "Points per 10 minutes"} for ${id}`}
                       type="number"
                       min="0.1"
                       max="100"
                       step="0.1"
                       required
-                      value={t.multiplierHundredths / 100}
+                      value={(config.scoringModel === "met-v1" ? t.metHundredths ?? 100 : t.multiplierHundredths) / 100}
                       onChange={(e) =>
                         changeType(id, {
-                          multiplierHundredths: Math.round(
+                          [config.scoringModel === "met-v1" ? "metHundredths" : "multiplierHundredths"]: Math.round(
                             Number(e.target.value) * 100,
                           ),
                         })
@@ -295,6 +297,7 @@ export function ScoringSettingsPage() {
                     changeType(newId, {
                       label: newLabel,
                       multiplierHundredths: 800,
+                      ...(config.scoringModel === "met-v1" ? {metHundredths:100} : {}),
                       enabled: true,
                       categories: ["endurance"],
                       allowsDistance: false,
@@ -563,7 +566,7 @@ export function ScoringSettingsPage() {
                   {Object.entries(v.config.types).map(([id, t]) => (
                     <li key={id}>
                       {t.label ?? id.replaceAll("_", " ")}:{" "}
-                      {t.multiplierHundredths / 100} points / 10 min
+                      {v.config.scoringModel === "met-v1" ? `${(t.metHundredths??0)/100} MET` : `${t.multiplierHundredths/100} points / 10 min`}
                       {t.enabled === false ? " · Disabled" : ""}
                     </li>
                   ))}

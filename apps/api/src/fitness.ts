@@ -41,7 +41,9 @@ export async function consistencyStatements(
              'consistencyMinMinutes',COALESCE(json_extract(r.config_json,'$.consistencyMinMinutes'),20)
            ),0 FROM scoring_rule_versions r WHERE r.club_id=? AND r.id=COALESCE(
              (SELECT id FROM scoring_rule_versions WHERE club_id=? AND (effective_on IS NULL OR effective_on<=?)
-              ORDER BY effective_on DESC,version DESC LIMIT 1),
+              ORDER BY CASE WHEN version>=COALESCE((SELECT MAX(mr.version) FROM scoring_rule_versions mr
+ WHERE mr.club_id=scoring_rule_versions.club_id AND json_extract(mr.config_json,'$.scoringModel')='met-v1'
+ AND (mr.effective_on IS NULL OR mr.effective_on<='${start}')),2147483647) THEN 1 ELSE 0 END DESC,effective_on DESC,version DESC LIMIT 1),
              (SELECT id FROM scoring_rule_versions WHERE club_id=? ORDER BY version LIMIT 1)
            )`,
         )

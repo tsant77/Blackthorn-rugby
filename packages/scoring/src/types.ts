@@ -51,6 +51,7 @@ export const FITNESS_CATEGORIES = ["strength", "speed", "endurance", "recovery"]
 export type FitnessCategory = (typeof FITNESS_CATEGORIES)[number];
 
 export interface TypeRule {
+  metHundredths?: number;
   label?: string;
   enabled?: boolean;
   categories?: FitnessCategory[];
@@ -64,6 +65,7 @@ export interface TypeRule {
 }
 
 export interface ScoringRule {
+  scoringModel?: "met-v1";
   consistency?: { days: number; pointsTenths: number }[];
   consistencyMinMinutes?: number;
   version: number;

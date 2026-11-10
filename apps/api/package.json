@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "e2e:server": "rm -rf .wrangler/e2e && wrangler d1 migrations apply blackthorn-rugby --local --persist-to .wrangler/e2e && wrangler dev --port 8787 --persist-to .wrangler/e2e --show-interactive-dev-session=false --var EMAIL_PROVIDER:none --var APP_ORIGIN:http://127.0.0.1:8787 --var BOOTSTRAP_TOKEN:dev-setup-token",
+    "e2e:server": "node ../../scripts/reset-e2e.mjs && wrangler d1 migrations apply blackthorn-rugby --local --persist-to .wrangler/e2e && wrangler dev --port 8787 --persist-to .wrangler/e2e --show-interactive-dev-session=false --var EMAIL_PROVIDER:none --var APP_ORIGIN:http://127.0.0.1:8787 --var BOOTSTRAP_TOKEN:dev-setup-token",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

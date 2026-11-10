@@ -1,7 +1,10 @@
+import { registerMetScoring } from "./met-scoring";
+import { registerPerformanceRoutes } from "./performance";
 import { registerSuggestionRoutes } from "./suggestions";
 import { registerScoringSettings } from "./scoring-settings";
 import { registerAccountRoutes, throttle } from "./accounts";
 import { Hono, type Context } from "hono";
+import { TrieRouter } from "hono/router/trie-router";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { clubCatalog } from "@blackthorn/db/catalog";
 import { randomToken, sha256Hex } from "./tokens";
@@ -51,7 +54,8 @@ interface SessionRow {
 }
 
 export function createApp(): Hono<AppEnv> {
-  const app = new Hono<AppEnv>();
+  // Avoid lazy RegExp-router compilation on the first request of each method.
+  const app = new Hono<AppEnv>({ router: new TrieRouter() });
 
   app.use("*", async (c, next) => {
     if (!["GET", "HEAD", "OPTIONS"].includes(c.req.method)) {
@@ -206,8 +210,10 @@ export function createApp(): Hono<AppEnv> {
   app.get("/api/dev/mailbox", c => c.json({ error: "Not found" }, 404));
 
   registerWorkoutRoutes(app, currentSession);
+  registerPerformanceRoutes(app, currentSession);
   registerSuggestionRoutes(app, currentSession);
   registerScoringSettings(app, currentSession);
+  registerMetScoring(app, currentSession);
   registerAnalyticsRoutes(app, currentSession);
   registerAdminRoutes(app, currentSession);
   registerEngageRoutes(app, currentSession);

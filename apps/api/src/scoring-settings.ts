@@ -3,7 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import {
   defaultRule,
   isRealCivilDate,
-  formulaTenths,
+  workoutFormulaTenths,
   validateRule,
   type ScoringRule,
 } from "@blackthorn/scoring";
@@ -93,13 +93,7 @@ export function registerScoringSettings(
       !["easy", "moderate", "hard", "max"].includes(String(intensity))
     )
       return c.json({ error: "Invalid preview workout." }, 400);
-    const gross = formulaTenths(
-      Number(duration),
-      rule.types[type]!.multiplierHundredths,
-      rule.intensityHundredths[
-        intensity as keyof ScoringRule["intensityHundredths"]
-      ],
-    );
+    const gross = workoutFormulaTenths(rule, type, Number(duration), intensity as keyof ScoringRule["intensityHundredths"]);
     return c.json({
       grossPointsTenths: gross,
       pointsTenths: Math.min(gross, rule.sessionCapTenths, rule.dailyCapTenths),
