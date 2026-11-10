@@ -90,4 +90,20 @@ describe("optional performance without changing points", () => {
     expect((await request("/api/workouts",{type:"running",durationMin:30,distanceMiles:1,distanceKilometers:1})).status).toBe(400);
     expect((await env.DB.prepare("SELECT rule_version_id FROM workouts WHERE id=?").bind(run.workout.id).first<any>())?.rule_version_id).toBe(rule.rule_version_id);
   });
+  it("supports weight/reps without sets, shared ranks, same-day baselines and moderation", async () => {
+    const saved=await log({exercises:[{name:"leg press",reps:5,loadGrams:100000}]});
+    expect(saved.workout.exercises[0].sets).toBe(1);
+    const rival=await request("/api/workouts",{type:"weight_training",durationMin:20,exercises:[{name:"leg press",reps:5,loadGrams:100000}]},"POST",other);
+    expect(rival.status).toBe(201);
+    for(const cookie of [player,other]) expect((await request("/api/performance/privacy",{performancePublic:true},"PATCH",cookie)).status).toBe(200);
+    const query="/api/performance/leaderboard?period=offseason&exercise=leg%20press&reps=5&metric=";
+    expect((await json(query+"strength")).standings.map((r:any)=>r.rank)).toEqual([1,1]);
+    expect((await json(query+"improvement")).standings).toEqual([]);
+    await env.DB.prepare("UPDATE workouts SET status='rejected' WHERE id=?").bind(saved.workout.id).run();
+    expect((await json(query+"strength")).standings.map((r:any)=>r.roster_name)).toEqual(["Other Player"]);
+    expect((await json("/api/performance")).records).toEqual([]);
+    await env.DB.prepare("UPDATE workouts SET status='approved' WHERE id=?").bind(saved.workout.id).run();
+    expect((await json(query+"strength")).standings.map((r:any)=>r.rank)).toEqual([1,1]);
+    expect((await json("/api/performance")).records[0].load_grams).toBe(100000);
+  });
 });
