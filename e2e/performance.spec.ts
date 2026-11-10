@@ -11,7 +11,7 @@ test("optional lifting, progress, private and shared performance boards on mobil
   await page.getByLabel("Position",{exact:true}).selectOption({label:"Fullback"});
   await page.getByRole("button",{name:"Save profile"}).click();
   await page.getByRole("link",{name:"Log",exact:true}).click();
-  await page.getByRole("button",{name:"Weights",exact:true}).click();
+  await page.getByRole("button",{name:/^(Weights|Weight training)$/}).click();
   await page.getByLabel("Minutes",{exact:true}).fill("20");
   await page.getByText("Optional performance details",{exact:true}).click();
   await page.getByLabel("Calories",{exact:true}).fill("200");

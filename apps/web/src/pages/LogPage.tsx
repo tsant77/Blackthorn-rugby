@@ -282,7 +282,7 @@ export function LogPage() {
           <p className="text-sm text-quiet">Record the weight per rep. PRs compare the same exercise and rep count.</p>
           {lifts.map((lift,index)=><fieldset key={index} className="my-s2 flex min-w-0 flex-col gap-s1"><legend>Exercise {index+1}</legend>
             <label>Exercise<select value={lift.name} onChange={e=>setLifts(lifts.map((v,i)=>i===index?{...v,name:e.target.value}:v))}>{["leg press","squat","bench press"].map(name=><option key={name}>{name}</option>)}</select></label>
-            {(["sets","reps","weight"] as const).map(key=><label key={key} className="capitalize">{key === "sets" ? "Sets, optional" : key}<input required={key!=="sets"} type="number" min={key==="weight"?0.01:1} max={key==="sets"?100:key==="reps"?1000:lift.unit==="lb"?881:400} step={key==="weight"?"any":1} value={lift[key]} onChange={e=>setLifts(lifts.map((v,i)=>i===index?{...v,[key]:e.target.value}:v))} /></label>)}
+            {(["sets","reps","weight"] as const).map(key=><label key={key}>{key === "sets" ? "Sets, optional" : key === "reps" ? "Reps" : "Weight"}<input required={key!=="sets"} type="number" min={key==="weight"?0.01:1} max={key==="sets"?100:key==="reps"?1000:lift.unit==="lb"?881:400} step={key==="weight"?"any":1} value={lift[key]} onChange={e=>setLifts(lifts.map((v,i)=>i===index?{...v,[key]:e.target.value}:v))} /></label>)}
             <label>Weight unit<select value={lift.unit} onChange={e=>setLifts(lifts.map((v,i)=>i===index?{...v,weight:"",unit:e.target.value}:v))}><option value="lb">lb</option><option value="kg">kg</option></select></label>
             <button type="button" onClick={()=>setLifts(lifts.filter((_,i)=>i!==index))}>Remove exercise {index+1}</button>
           </fieldset>)}

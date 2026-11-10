@@ -674,9 +674,10 @@ async function workoutPayload(db: D1Database, id: string, profileId: string, ext
 }
 
 function presentWorkout(row: WorkoutRow) {
+  const { exercises_json, ...workout } = row;
   return {
-    ...row,
-    exercises: JSON.parse(row.exercises_json || "[]") as Lift[],
+    ...workout,
+    exercises: JSON.parse(exercises_json || "[]") as Lift[],
     pace_seconds_per_km: row.distance_m ? Math.round(row.duration_min * 60000 / row.distance_m) : null,
     points_tenths: Number(row.points_tenths),
     distance_miles: row.distance_m == null ? null : metersToMiles(row.distance_m),
