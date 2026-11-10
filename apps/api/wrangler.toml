@@ -1,0 +1,73 @@
+"$schema" = "../../node_modules/wrangler/config-schema.json"
+name = "blackthorn-rugby"
+main = "src/index.ts"
+compatibility_date = "2026-11-08"
+compatibility_flags = ["nodejs_compat"]
+upload_source_maps = true
+workers_dev = true
+
+[observability]
+enabled = true
+redact_query_string = true
+
+[observability.traces]
+enabled = true
+
+# Replace database_id after `wrangler d1 create blackthorn-rugby`.
+# Do not put a Cloudflare account id in this file.
+[[d1_databases]]
+binding = "DB"
+database_name = "blackthorn-rugby"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "../../packages/db/migrations"
+
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = [ "/api/*", "/auth/*", "/health", "/link", "/link/*" ]
+
+[vars]
+EMAIL_PROVIDER = "none"
+
+# Photos are out of scope this offseason. Do not add an R2 binding.
+
+# `npx wrangler deploy` is production. `npx wrangler deploy --env dev` is a
+# separate dress-rehearsal worker. Env blocks do not inherit the top-level
+# bindings, so the dev block repeats them. Replace its database_id after
+# `wrangler d1 create blackthorn-rugby-dev`. Do not commit a real id.
+
+[env.dev]
+name = "blackthorn-rugby-dev"
+main = "src/index.ts"
+compatibility_date = "2026-11-08"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[env.dev.observability]
+enabled = true
+redact_query_string = true
+
+[env.dev.assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = [ "/api/*", "/auth/*", "/health", "/link", "/link/*" ]
+
+[[env.dev.d1_databases]]
+binding = "DB"
+database_name = "blackthorn-rugby-dev"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "../../packages/db/migrations"
+
+[env.dev.vars]
+EMAIL_PROVIDER = "none"
+APP_ORIGIN = "https://blackthorn-rugby-dev.blackthorn-rugby.workers.dev"
+
+[env.dev.triggers]
+crons = ["0 12 * * *"]
+
+# Daily 12:00 UTC (07:00 EST / 08:00 EDT): challenge notices, and the Monday recap.
+# Enabled for the operator's deploy. This repository does not run wrangler deploy.
+[triggers]
+crons = ["0 12 * * *"]

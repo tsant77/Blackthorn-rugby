@@ -1,0 +1,12 @@
+# Copy to .dev.vars for local wrangler dev. .dev.vars is gitignored.
+# Launch does not send email. Use none unless you are exercising the optional provider.
+
+EMAIL_PROVIDER=none
+APP_ORIGIN=http://127.0.0.1:8787
+BOOTSTRAP_TOKEN=replace-with-a-local-token
+
+# Optional. Uncomment to capture mail in GET /api/dev/mailbox.
+# Do not set console on the deployed worker.
+# EMAIL_PROVIDER=console
+# EMAIL_FROM=noreply@example.com
+# BOOTSTRAP_ADMIN_EMAIL=you@example.com
