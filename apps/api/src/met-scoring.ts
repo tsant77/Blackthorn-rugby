@@ -11,14 +11,20 @@ const club = clubCatalog.id;
 
 export async function metPlan(db:D1Database) {
   const context=await scoringBasis(db);
-  const versions=await db.prepare("SELECT id,version,effective_on FROM scoring_rule_versions WHERE club_id=? ORDER BY version DESC").bind(club).all<{id:string;version:number;effective_on:string|null}>();
-  if(versions.results.some(v=>v.effective_on && v.effective_on>context.today)) throw new Error("Resolve scheduled scoring versions before applying retroactive scoring.");
-  const total=await db.prepare("SELECT COUNT(*) n,MIN(occurred_on) firstDate FROM workouts WHERE club_id=?").bind(club).first<{n:number;firstDate:string|null}>();
-  const rows=await db.prepare(`SELECT w.id,w.player_profile_id,w.occurred_on,w.created_at,w.type,w.duration_min,w.intensity,w.status,w.scoring_revision,w.rule_version_id,
+  // One database snapshot and round trip for independent planning inputs.
+  const [versionRows,totalRows,workoutRows]=await db.batch([
+    db.prepare("SELECT id,version,effective_on FROM scoring_rule_versions WHERE club_id=? ORDER BY version DESC").bind(club),
+    db.prepare("SELECT COUNT(*) n,MIN(occurred_on) firstDate FROM workouts WHERE club_id=?").bind(club),
+    db.prepare(`SELECT w.id,w.player_profile_id,w.occurred_on,w.created_at,w.type,w.duration_min,w.intensity,w.status,w.scoring_revision,w.rule_version_id,
     (SELECT COALESCE(SUM(points_tenths),0) FROM point_transactions WHERE workout_id=w.id) AS net
     FROM workouts w WHERE w.club_id=? AND (w.status IN ('submitted','approved') OR
       (SELECT COALESCE(SUM(points_tenths),0) FROM point_transactions WHERE workout_id=w.id)<>0)
-    ORDER BY w.player_profile_id,w.occurred_on,w.created_at,w.id LIMIT 1001`).bind(club).all<Row>();
+    ORDER BY w.player_profile_id,w.occurred_on,w.created_at,w.id LIMIT 1001`).bind(club),
+  ]);
+  const versions={results:versionRows!.results as {id:string;version:number;effective_on:string|null}[]};
+  const total=totalRows!.results[0] as {n:number;firstDate:string|null};
+  const rows={results:workoutRows!.results as Row[]};
+  if(versions.results.some(v=>v.effective_on && v.effective_on>context.today)) throw new Error("Resolve scheduled scoring versions before applying retroactive scoring.");
   if(rows.results.length>1000) throw new Error("More than 1,000 workouts: use a measured offline recalculation before switching rules.");
   const config=metRule(context.rule);
   config.version=versions.results[0]!.version+1;
