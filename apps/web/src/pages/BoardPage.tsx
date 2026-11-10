@@ -63,9 +63,9 @@ export function BoardPage() {
         <h1 className="font-heading text-2xl font-semibold">Leaderboard</h1>
         <p className="text-sm text-quiet">{range}</p>
       </div>
-      <label className="flex flex-col gap-s1">Leaderboard<select value={metric} onChange={e=>setMetric(e.target.value)}>{[["points","Overall points"],["running","Running distance"],["cycling","Cycling distance"],["rowing","Rowing distance"],["strength","Strength PRs"],["improvement","Most improved"],["consistency","Consistency"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>
+      <label className="flex flex-col gap-s1">Leaderboard<select aria-label="Leaderboard" value={metric} onChange={e=>setMetric(e.target.value)}>{[["points","Overall points"],["running","Running distance"],["cycling","Cycling distance"],["rowing","Rowing distance"],["strength","Strength PRs"],["improvement","Most improved"],["consistency","Consistency"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>
       {metric === "strength" || metric === "improvement" ? <>
-        <label>Exercise<select value={exercise} onChange={e=>setExercise(e.target.value)}>{["leg press","squat","bench press"].map(name=><option key={name}>{name}</option>)}</select></label>
+        <label>Exercise<select aria-label="Exercise" value={exercise} onChange={e=>setExercise(e.target.value)}>{["leg press","squat","bench press"].map(name=><option key={name}>{name}</option>)}</select></label>
         <label>Reps per set<input type="number" min="1" max="1000" value={reps} onChange={e=>setReps(e.target.value)} /></label>
         <p className="text-sm text-quiet">{metric === "improvement" ? "Improvement from your first training day's best to a later best in this period, at this rep count." : "Heaviest recorded load at this rep count."}</p>
       </> : null}

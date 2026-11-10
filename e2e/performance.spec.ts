@@ -8,7 +8,7 @@ test("optional lifting, progress, private and shared performance boards on mobil
   await page.setViewportSize({width:375,height:812});
   await page.goto(link);
   await page.getByLabel("Roster name").fill("Performance Player");
-  await page.getByLabel("Position",{exact:true}).selectOption({label:"Fullback"});
+  await page.getByLabel("Position").selectOption({label:"Fullback"});
   await page.getByRole("button",{name:"Save profile"}).click();
   await page.getByRole("link",{name:"Log",exact:true}).click();
   await page.getByRole("button",{name:/^(Weights|Weight training)$/}).click();

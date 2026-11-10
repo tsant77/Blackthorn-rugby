@@ -278,10 +278,10 @@ export function LogPage() {
           <summary className="font-heading font-semibold">Optional performance details</summary>
           <p className="text-sm text-quiet">These details do not add points. Manage sharing in You → My progress.</p>
           <label className="flex flex-col gap-s1">Calories<input type="number" min="1" max="10000" value={calories} onChange={e=>setCalories(e.target.value)} /></label>
-          <label className="flex flex-col gap-s1">Calorie source<select value={calorieSource} onChange={e=>setCalorieSource(e.target.value)}><option value="device">Device-reported (unverified)</option><option value="estimated">Estimated</option></select></label>
+          <label className="flex flex-col gap-s1">Calorie source<select value={calorieSource} onChange={e=>setCalorieSource(e.target.value)}><option value="device">Device-reported (unverified)</option><option value="estimated">Manual estimate</option></select></label>
           <p className="text-sm text-quiet">Record the weight per rep. PRs compare the same exercise and rep count.</p>
           {lifts.map((lift,index)=><fieldset key={index} className="my-s2 flex min-w-0 flex-col gap-s1"><legend>Exercise {index+1}</legend>
-            <label>Exercise<select value={lift.name} onChange={e=>setLifts(lifts.map((v,i)=>i===index?{...v,name:e.target.value}:v))}>{["leg press","squat","bench press"].map(name=><option key={name}>{name}</option>)}</select></label>
+            <label>Exercise<select aria-label="Exercise" value={lift.name} onChange={e=>setLifts(lifts.map((v,i)=>i===index?{...v,name:e.target.value}:v))}>{["leg press","squat","bench press"].map(name=><option key={name}>{name}</option>)}</select></label>
             {(["sets","reps","weight"] as const).map(key=><label key={key}>{key === "sets" ? "Sets, optional" : key === "reps" ? "Reps" : "Weight"}<input required={key!=="sets"} type="number" min={key==="weight"?0.01:1} max={key==="sets"?100:key==="reps"?1000:lift.unit==="lb"?881:400} step={key==="weight"?"any":1} value={lift[key]} onChange={e=>setLifts(lifts.map((v,i)=>i===index?{...v,[key]:e.target.value}:v))} /></label>)}
             <label>Weight unit<select value={lift.unit} onChange={e=>setLifts(lifts.map((v,i)=>i===index?{...v,weight:"",unit:e.target.value}:v))}><option value="lb">lb</option><option value="kg">kg</option></select></label>
             <button type="button" onClick={()=>setLifts(lifts.filter((_,i)=>i!==index))}>Remove exercise {index+1}</button>
