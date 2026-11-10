@@ -1,7 +1,7 @@
 import { Footprints, Dumbbell, Waves, Timer, CircleDot, Shield, Goal, CheckCircle2 } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { displayDate } from "../lib/dates";
-import { formulaTenths, formatPoints, type ScoringRule } from "@blackthorn/scoring";
+import { workoutFormulaTenths, formatPoints, type ScoringRule } from "@blackthorn/scoring";
 import { api, ApiError } from "../api";
 
 const TYPES = [
@@ -62,7 +62,7 @@ export function LogPage() {
   const duration = Number(durationMin);
   const multiplier = estimateRule?.types[type]?.multiplierHundredths;
   const estimate = estimateRule && multiplier != null && Number.isInteger(duration) && duration >= 1 && duration <= 240
-    ? Math.min(estimateRule.sessionCapTenths, formulaTenths(duration, multiplier, estimateRule.intensityHundredths[intensity])) : null;
+    ? Math.min(estimateRule.sessionCapTenths, workoutFormulaTenths(estimateRule, type, duration, intensity)) : null;
   const distance = estimateRule?.types[type]?.allowsDistance ?? (type === "running" || type === "rower");
   const types = estimateRule ? Object.entries(estimateRule.types).filter(([,r])=>r.enabled!==false).map(([id,r])=>[id,r.label ?? TYPES.find(t=>t[0]===id)?.[1] ?? id.replaceAll("_"," ")] as const) : TYPES;
 

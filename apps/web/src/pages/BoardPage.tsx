@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { ArrowUpRight, ArrowDownRight, Minus, Sparkles } from "lucide-react";
 import { displayRange } from "../lib/dates";
 import { useEffect, useState } from "react";
@@ -103,7 +104,7 @@ export function BoardPage() {
           <li key={row.profile_id} className={`standing-row ${row.profile_id === me?.profile?.id ? "text-gold-soft" : ""}`}>
             <span className="w-8 font-display text-2xl text-gold">{row.rank}</span>
             <span className="flex-1">
-              <span className="block font-heading font-semibold break-words">{row.roster_name}</span>
+              <Link to={`/activity?profileId=${encodeURIComponent(row.profile_id)}`} className="block font-heading font-semibold break-words underline">{row.roster_name}</Link>
               <span className="block text-xs text-quiet break-words">{row.position_name ?? "No position"} · {row.group_name ?? "Coaches"}</span>
               <span className="mt-half flex flex-wrap items-center gap-s1 text-xs text-quiet">{metric === "points" ? `${row.workout_count} sessions` : "Self-reported performance"}
                 {period === "week" && metric === "points" ? <span className="rank-movement" aria-label={movementLabel(row)} title={movementLabel(row)}>

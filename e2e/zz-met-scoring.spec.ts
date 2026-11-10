@@ -1,0 +1,32 @@
+import { expect,test } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+import { invitePlayer,useAdmin } from "./account";
+
+test("leaderboard player logs and administrator retrospective MET switch",async({page})=>{
+  await useAdmin(page);
+  const link=await invitePlayer(page,"MET Lifter");
+  await page.setViewportSize({width:375,height:812});
+  await page.goto(link);
+  await page.getByLabel("Roster name").fill("MET Lifter");
+  await page.getByLabel("Position").selectOption({label:"Fullback"});
+  await page.getByRole("button",{name:"Save profile"}).click();
+  await page.getByRole("link",{name:"Log",exact:true}).click();
+  await page.getByRole("button",{name:/^(Weights|Weight training)$/}).click();
+  await page.getByLabel("Minutes",{exact:true}).fill("60");
+  await page.getByRole("button",{name:"Save workout",exact:true}).click();
+  await expect(page.getByText("Workout saved",{exact:true})).toBeVisible();
+  await page.getByRole("link",{name:"Board",exact:true}).click();
+  await page.getByRole("link",{name:"MET Lifter",exact:true}).click();
+  await expect(page.getByRole("heading",{name:"MET Lifter activity log"})).toBeVisible();
+  await expect(page.getByText(/60 min/)).toBeVisible();
+  const activityUrl=page.url();
+  await useAdmin(page);
+  await page.goto("/scoring-settings");
+  await page.getByRole("button",{name:"Preview MET recalculation",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Apply MET scoring to all workouts",exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Apply MET scoring to all workouts",exact:true}).click();
+  await expect(page.getByText("MET scoring applied. Existing workout totals and leaderboards have been recalculated.",{exact:true})).toBeVisible();
+  await page.goto(activityUrl);
+  await expect(page.getByText(/35.0 PTS/)).toBeVisible();
+  expect((await new AxeBuilder({page}).analyze()).violations).toEqual([]);
+});

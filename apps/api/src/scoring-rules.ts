@@ -12,7 +12,9 @@ export async function ruleForDate(db: D1Database, date: string, id?: string) {
     : await db
         .prepare(
           `SELECT id,version,config_json,effective_on FROM scoring_rule_versions WHERE club_id=?
-        AND (effective_on IS NULL OR effective_on<=?) ORDER BY effective_on DESC,version DESC LIMIT 1`,
+        AND (effective_on IS NULL OR effective_on<=?) ORDER BY CASE WHEN version>=COALESCE((SELECT MAX(mr.version) FROM scoring_rule_versions mr
+ WHERE mr.club_id=scoring_rule_versions.club_id AND json_extract(mr.config_json,'$.scoringModel')='met-v1'
+ AND (mr.effective_on IS NULL OR mr.effective_on<=?2)),2147483647) THEN 1 ELSE 0 END DESC,effective_on DESC,version DESC LIMIT 1`,
         )
         .bind(clubCatalog.id, date)
         .first<RuleRow>();

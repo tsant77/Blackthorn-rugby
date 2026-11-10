@@ -1,3 +1,4 @@
+import { registerMetScoring } from "./met-scoring";
 import { registerPerformanceRoutes } from "./performance";
 import { registerSuggestionRoutes } from "./suggestions";
 import { registerScoringSettings } from "./scoring-settings";
@@ -210,6 +211,7 @@ export function createApp(): Hono<AppEnv> {
   registerPerformanceRoutes(app, currentSession);
   registerSuggestionRoutes(app, currentSession);
   registerScoringSettings(app, currentSession);
+  registerMetScoring(app, currentSession);
   registerAnalyticsRoutes(app, currentSession);
   registerAdminRoutes(app, currentSession);
   registerEngageRoutes(app, currentSession);

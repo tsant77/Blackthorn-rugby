@@ -293,19 +293,31 @@ export function registerWorkoutRoutes(
   app.get("/api/activity", async (c) => {
     const session = await currentSession(c);
     if (!session) return c.json({ error: "Sign in required." }, 401);
-    const rows = await c.env.DB.prepare(
-      `SELECT w.id, w.type, w.occurred_on, w.duration_min, pr.roster_name,
-              COALESCE(SUM(t.points_tenths), 0) AS points_tenths
-       FROM workouts w
-       JOIN player_profiles pr ON pr.id = w.player_profile_id
-       JOIN club_memberships m ON m.id = pr.membership_id AND m.club_id = ?
-       LEFT JOIN point_transactions t ON t.workout_id = w.id
-       WHERE w.status IN ('submitted', 'approved')
-       GROUP BY w.id, w.type, w.occurred_on, w.duration_min, pr.roster_name, w.created_at
-       ORDER BY w.created_at DESC
-       LIMIT 20`,
-    ).bind(CLUB_ID).all();
-    return c.json({ activity: rows.results });
+    const profileId = c.req.query("profileId") ?? null;
+    if (profileId && profileId.length>100) return c.json({error:"Invalid player."},400);
+    let cursor: [number,string] | null = null;
+    try {
+      const raw=c.req.query("cursor");
+      if(raw) {
+        if(raw.length>256) throw new Error();
+        const value=JSON.parse(raw);
+        if(!Array.isArray(value) || value.length!==2 || !Number.isSafeInteger(value[0]) || value[0]<0 || typeof value[1]!=="string" || !value[1] || value[1].length>100) throw new Error();
+        cursor=value as [number,string];
+      }
+    } catch { return c.json({error:"Invalid activity cursor."},400); }
+    const player=profileId ? await c.env.DB.prepare("SELECT p.roster_name FROM player_profiles p JOIN club_memberships m ON m.id=p.membership_id WHERE p.id=? AND m.club_id=?").bind(profileId,CLUB_ID).first<{roster_name:string}>() : null;
+    if(profileId && !player) return c.json({error:"Player not found."},404);
+    const rows=await c.env.DB.prepare(
+      `SELECT w.id,w.type,w.occurred_on,w.duration_min,w.created_at,pr.roster_name,
+        COALESCE((SELECT SUM(points_tenths) FROM point_transactions WHERE workout_id=w.id),0) AS points_tenths
+        FROM workouts w JOIN player_profiles pr ON pr.id=w.player_profile_id
+        JOIN club_memberships m ON m.id=pr.membership_id AND m.club_id=?
+        WHERE w.status IN ('submitted','approved') AND (? IS NULL OR pr.id=?)
+        AND (? IS NULL OR (w.created_at,w.id)<(?,?))
+        ORDER BY w.created_at DESC,w.id DESC LIMIT 21`
+    ).bind(CLUB_ID,profileId,profileId,cursor?.[0]??null,cursor?.[0]??null,cursor?.[1]??null).all<{id:string;created_at:number}>();
+    const activity=rows.results.slice(0,20),last=activity.at(-1);
+    return c.json({activity,player,nextCursor:rows.results.length>20 && last?JSON.stringify([last.created_at,last.id]):null});
   });
 }
 

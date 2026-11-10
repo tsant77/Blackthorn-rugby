@@ -3,7 +3,7 @@ import { consistencyStatements, revisionGuard, mutationConflict, dailyCapStateme
 import { ruleForDate } from "./scoring-rules";
 import type { Context, Hono } from "hono";
 import { clubCatalog } from "@blackthorn/db/catalog";
-import { isRealCivilDate } from "@blackthorn/scoring";
+import { workoutFormulaTenths, type Intensity, isRealCivilDate } from "@blackthorn/scoring";
 import type { Env } from "./app";
 import { scoringContext } from "./workouts";
 import { syncBadges } from "./badges";
@@ -53,12 +53,12 @@ export function registerAdminRoutes(
       return c.json({ error: "Add a short reason." }, 400);
     }
     const workout = await c.env.DB.prepare(
-      `SELECT w.id, w.status, w.player_profile_id, w.rule_version_id, w.occurred_on, w.scoring_revision
+      `SELECT w.id, w.status, w.player_profile_id, w.rule_version_id, w.occurred_on, w.scoring_revision, w.type, w.duration_min, w.intensity
        FROM workouts w
        JOIN player_profiles pr ON pr.id = w.player_profile_id
        JOIN club_memberships m ON m.id = pr.membership_id AND m.club_id = ?
        WHERE w.id = ?`,
-    ).bind(CLUB_ID, c.req.param("id")).first<{ id: string; status: string; player_profile_id: string; rule_version_id: string; occurred_on: string; scoring_revision: number }>();
+    ).bind(CLUB_ID, c.req.param("id")).first<{ id: string; status: string; player_profile_id: string; rule_version_id: string; occurred_on: string; scoring_revision: number; type:string; duration_min:number; intensity:Intensity|null }>();
     if (!workout) return c.json({ error: "Workout not found." }, 404);
     const now = Date.now();
     const net = await netPoints(c.env.DB, workout.id);
@@ -70,7 +70,8 @@ export function registerAdminRoutes(
         `SELECT points_tenths FROM point_transactions
          WHERE workout_id = ? AND kind = 'reversal' ORDER BY created_at DESC, rowid DESC LIMIT 1`,
       ).bind(workout.id).first<{ points_tenths: number }>();
-      const restore = reversed ? -Number(reversed.points_tenths) : 0;
+      const selected = await ruleForDate(c.env.DB,workout.occurred_on,workout.rule_version_id);
+      const restore = selected.rule.scoringModel === "met-v1" ? Math.min(selected.rule.sessionCapTenths,workoutFormulaTenths(selected.rule,workout.type,workout.duration_min,workout.intensity??"moderate")) : reversed ? -Number(reversed.points_tenths) : 0;
       try { await c.env.DB.batch([
         revisionGuard(c.env.DB, workout.id, workout.scoring_revision, workout.status),
         c.env.DB.prepare(
