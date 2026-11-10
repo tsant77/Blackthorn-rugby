@@ -18,11 +18,15 @@ export function MyProgress() {
     return ()=>{active=false;};
   }, [period]);
   async function share(checked: boolean) {
+    const previous = data?.performancePublic ?? false;
     setSaving(true); setError("");
+    setData(d=>d?{...d,performancePublic:checked}:d);
     try {
       await api("/api/performance/privacy", {method:"PATCH",body:JSON.stringify({performancePublic:checked})});
-      setData(d=>d?{...d,performancePublic:checked}:d);
-    } catch { setError("Could not save sharing preference."); }
+    } catch {
+      setData(d=>d?{...d,performancePublic:previous}:d);
+      setError("Could not save sharing preference.");
+    }
     finally { setSaving(false); }
   }
   const max = Math.max(1,...(data?.weeks.map(w=>w.runningM) ?? []));
