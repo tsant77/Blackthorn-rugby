@@ -27,8 +27,15 @@ test("optional lifting, progress, private and shared performance boards on mobil
   await expect(page.getByText("bench press PR",{exact:true})).toBeVisible();
   const sharing=page.getByLabel("Share my performance on team leaderboards");
   await expect(sharing).not.toBeChecked();
+  await page.route("**/api/performance/privacy", route=>route.fulfill({status:500,json:{error:"Synthetic save failure"}}));
+  await sharing.click();
+  await expect(page.getByRole("alert")).toContainText("Could not save sharing preference.");
+  await expect(sharing).not.toBeChecked();
+  await page.unroute("**/api/performance/privacy");
   await sharing.check();
   await expect(sharing).toBeEnabled();
+  await page.reload();
+  await expect(page.getByLabel("Share my performance on team leaderboards")).toBeChecked();
   await page.getByRole("link",{name:"Board",exact:true}).click();
   await page.getByLabel("Leaderboard",{exact:true}).selectOption("strength");
   await expect(page.getByText("Performance Player",{exact:true})).toBeVisible();
