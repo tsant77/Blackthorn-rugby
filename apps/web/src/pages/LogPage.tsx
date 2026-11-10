@@ -27,6 +27,9 @@ interface Workout {
   intensity: string | null;
   distance_miles: number | null;
   notes: string | null;
+  calories: number | null;
+  calorie_source: string | null;
+  exercises: {name:string;sets:number;reps:number;loadGrams:number}[];
   status: string;
   review_note: string | null;
   points_tenths: number;
@@ -37,6 +40,10 @@ export function LogPage() {
   const [durationMin, setDurationMin] = useState("");
   const [intensity, setIntensity] = useState<(typeof INTENSITIES)[number]>("moderate");
   const [distanceMiles, setDistanceMiles] = useState("");
+  const [calories, setCalories] = useState("");
+  const [calorieSource, setCalorieSource] = useState("device");
+  const [distanceUnit, setDistanceUnit] = useState("mi");
+  const [lifts, setLifts] = useState<{name:string;sets:string;reps:string;weight:string;unit:string}[]>([]);
   const [notes, setNotes] = useState("");
   const [today, setToday] = useState("");
   const [minDate, setMinDate] = useState("");
@@ -105,6 +112,7 @@ export function LogPage() {
     setDurationMin("");
     setDistanceMiles("");
     setNotes("");
+    setCalories(""); setCalorieSource("device"); setLifts([]); setDistanceUnit("mi");
     setEditing(null);
     setIntensity("moderate");
     setOccurredOn(today);
@@ -124,7 +132,10 @@ export function LogPage() {
       intensity,
       notes,
     };
-    if (distance && distanceMiles) payload.distanceMiles = Number(distanceMiles);
+    if (distance && distanceMiles) payload[distanceUnit === "mi" ? "distanceMiles" : "distanceKilometers"] = Number(distanceMiles);
+    payload.calories = calories ? Number(calories) : null;
+    payload.calorieSource = calories ? calorieSource : null;
+    payload.exercises = lifts.map(lift => ({ name:lift.name, sets:lift.sets?Number(lift.sets):undefined, reps:Number(lift.reps), loadGrams:Math.round(Number(lift.weight)*(lift.unit==="lb"?453.59237:1000)) }));
     if (!editing) {
       const fingerprint = JSON.stringify(payload);
       if (request.current?.payload !== fingerprint) request.current = { payload: fingerprint, id: crypto.randomUUID() };
@@ -169,6 +180,9 @@ export function LogPage() {
     setIntensity((workout.intensity as (typeof INTENSITIES)[number]) ?? "moderate");
     setDistanceMiles(workout.distance_miles == null ? "" : String(workout.distance_miles));
     setNotes(workout.notes ?? "");
+    setDistanceUnit("mi"); setCalories(workout.calories == null ? "" : String(workout.calories));
+    setCalorieSource(workout.calorie_source ?? "device");
+    setLifts((workout.exercises ?? []).map(e=>({name:e.name,sets:String(e.sets),reps:String(e.reps),weight:String(e.loadGrams/1000),unit:"kg"})));
     setOccurredOn(workout.occurred_on);
     setResult(null);
   }
@@ -247,7 +261,7 @@ export function LogPage() {
         </div>
         {distance ? (
           <label className="flex flex-col gap-s1 text-sm text-quiet">
-            Miles, optional
+            {distanceUnit === "mi" ? "Miles, optional" : "Kilometers, optional"}
             <input
               type="number"
               min="0"
@@ -259,6 +273,21 @@ export function LogPage() {
             />
           </label>
         ) : null}
+        {distance ? <label className="flex flex-col gap-s1 text-sm text-quiet">Distance unit<select value={distanceUnit} onChange={e=>{setDistanceMiles("");setDistanceUnit(e.target.value);}}><option value="mi">Miles</option><option value="km">Kilometers</option></select></label> : null}
+        <details open={editing ? true : undefined} className="panel">
+          <summary className="font-heading font-semibold">Optional performance details</summary>
+          <p className="text-sm text-quiet">These details do not add points. Manage sharing in You → My progress.</p>
+          <label className="flex flex-col gap-s1">Calories<input type="number" min="1" max="10000" value={calories} onChange={e=>setCalories(e.target.value)} /></label>
+          <label className="flex flex-col gap-s1">Calorie source<select value={calorieSource} onChange={e=>setCalorieSource(e.target.value)}><option value="device">Device-reported (unverified)</option><option value="estimated">Estimated</option></select></label>
+          <p className="text-sm text-quiet">Record the weight per rep. PRs compare the same exercise and rep count.</p>
+          {lifts.map((lift,index)=><fieldset key={index} className="my-s2 flex min-w-0 flex-col gap-s1"><legend>Exercise {index+1}</legend>
+            <label>Exercise<select value={lift.name} onChange={e=>setLifts(lifts.map((v,i)=>i===index?{...v,name:e.target.value}:v))}>{["leg press","squat","bench press"].map(name=><option key={name}>{name}</option>)}</select></label>
+            {(["sets","reps","weight"] as const).map(key=><label key={key} className="capitalize">{key === "sets" ? "Sets, optional" : key}<input required={key!=="sets"} type="number" min={key==="weight"?0.01:1} max={key==="sets"?100:key==="reps"?1000:lift.unit==="lb"?881:400} step={key==="weight"?"any":1} value={lift[key]} onChange={e=>setLifts(lifts.map((v,i)=>i===index?{...v,[key]:e.target.value}:v))} /></label>)}
+            <label>Weight unit<select value={lift.unit} onChange={e=>setLifts(lifts.map((v,i)=>i===index?{...v,weight:"",unit:e.target.value}:v))}><option value="lb">lb</option><option value="kg">kg</option></select></label>
+            <button type="button" onClick={()=>setLifts(lifts.filter((_,i)=>i!==index))}>Remove exercise {index+1}</button>
+          </fieldset>)}
+          <button type="button" disabled={lifts.length>=20} onClick={()=>setLifts([...lifts,{name:"bench press",sets:"",reps:"5",weight:"",unit:"lb"}])}>Add exercise</button>
+        </details>
         <label className="flex flex-col gap-s1 text-sm text-quiet">
           Notes, optional
           <textarea
@@ -292,6 +321,9 @@ export function LogPage() {
                 <p className="font-heading font-semibold capitalize">{workout.activity_label ?? workout.type.replaceAll("_", " ")}</p>
                 <p className="text-sm text-quiet">{displayDate(workout.occurred_on)} · {workout.duration_min} min · {sessionLabel(workout.status, workout.review_note)}</p>
                 <p className="mt-half text-xs capitalize text-sage">{workout.intensity}{workout.distance_miles != null ? ` · ${workout.distance_miles} miles` : ""}</p>
+                {workout.calories != null ? <p className="text-xs text-quiet">{workout.calories} kcal · {workout.calorie_source === "device" ? "device-reported (unverified)" : "estimated"}</p> : null}
+                {(workout.exercises ?? []).map((e,i)=><p key={i} className="text-xs text-quiet capitalize">{e.name} · {e.sets} × {e.reps} × {(e.loadGrams/1000).toFixed(2)} kg</p>)}
+                {workout.distance_miles ? <p className="text-xs text-quiet">Average pace: {(workout.duration_min / (workout.distance_miles*1.609344)).toFixed(2)} min/km</p> : null}
                 {workout.notes ? <p className="mt-s1 text-sm text-quiet break-words">{workout.notes}</p> : null}
                 {workout.review_note ? <p className="text-sm text-gold-soft">{workout.review_note}</p> : null}
               </div>

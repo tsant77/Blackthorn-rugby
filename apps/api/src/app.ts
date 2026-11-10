@@ -1,3 +1,4 @@
+import { registerPerformanceRoutes } from "./performance";
 import { registerSuggestionRoutes } from "./suggestions";
 import { registerScoringSettings } from "./scoring-settings";
 import { registerAccountRoutes, throttle } from "./accounts";
@@ -206,6 +207,7 @@ export function createApp(): Hono<AppEnv> {
   app.get("/api/dev/mailbox", c => c.json({ error: "Not found" }, 404));
 
   registerWorkoutRoutes(app, currentSession);
+  registerPerformanceRoutes(app, currentSession);
   registerSuggestionRoutes(app, currentSession);
   registerScoringSettings(app, currentSession);
   registerAnalyticsRoutes(app, currentSession);

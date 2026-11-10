@@ -1,3 +1,4 @@
+import { parseMetrics, metricStatements, metricColumns, type Lift } from "./performance";
 import { ruleForDate } from "./scoring-rules";
 import { consistencyStatements, dailyCapStatement, revisionGuard, mutationConflict } from "./fitness";
 import type { Context, Hono } from "hono";
@@ -39,6 +40,9 @@ interface WorkoutRow {
   duration_min: number;
   intensity: string | null;
   distance_m: number | null;
+  calories: number | null;
+  calorie_source: string | null;
+  exercises_json: string;
   notes: string | null;
   status: string;
   review_note: string | null;
@@ -92,6 +96,8 @@ export function registerWorkoutRoutes(
       throw error;
     }
     const context = await scoringBasis(c.env.DB);
+    const metrics = parseMetrics(body);
+    if (!metrics) return c.json({ error: "Check optional calories and exercises. Include a source and valid sets, reps and load." }, 400);
     const draft = draftFromBody(body, context.today);
     if (!draft) return c.json({ error: "Check the duration, type, and date." }, 400);
     if (draft.workout.occurredOn !== context.today) {
@@ -102,7 +108,7 @@ export function registerWorkoutRoutes(
     if (reads.existing) return c.json(await workoutPayload(c.env.DB, reads.existing.id, session.profile_id!, { idempotent: true }));
 
     const decision = scoreWorkout({
-      workout: draft.workout,
+      workout: { ...draft.workout, exercises: metrics.exercises },
       athlete: athleteOf(session),
       rule: context.rule,
       history: reads.history,
@@ -137,6 +143,7 @@ export function registerWorkoutRoutes(
         now,
         now,
       ),
+      ...metricStatements(c.env.DB, id, body, metrics, now),
       ...ledgerInserts(c.env.DB, session, id, context.ruleId, decision.transactions.filter(t => t.reasonCode !== "daily_cap"), now),
       dailyCapStatement(c.env.DB, session.profile_id!, id, context.ruleId, draft.workout.occurredOn, context.rule.dailyCapTenths, session.user_id, now),
       ...await consistencyStatements(c.env.DB, session.profile_id!, [draft.workout.occurredOn], session.user_id, now),
@@ -181,6 +188,8 @@ export function registerWorkoutRoutes(
       throw error;
     }
     const context = await scoringMetadata(c.env.DB);
+    const metrics = parseMetrics(body);
+    if (!metrics) return c.json({ error: "Check optional calories and exercises. Include a source and valid sets, reps and load." }, 400);
     const draft = draftFromBody(body, context.today);
     if (!draft) return c.json({ error: "Check the duration, type, and date." }, 400);
     // The stored scoring version and bounded training history are independent reads.
@@ -190,7 +199,7 @@ export function registerWorkoutRoutes(
     ]);
     if (selected.effectiveOn && draft.workout.occurredOn < selected.effectiveOn) return c.json({ error: "An edit cannot move a workout before its scoring version. Delete it and log a new workout instead." }, 400);
     const decision = scoreWorkout({
-      workout: { ...draft.workout, clientRequestId: null },
+      workout: { ...draft.workout, exercises: metrics.exercises, clientRequestId: null },
       athlete: athleteOf(session),
       rule: selected.rule,
       history,
@@ -218,6 +227,7 @@ export function registerWorkoutRoutes(
         now,
         owned.id,
       ),
+      ...metricStatements(c.env.DB, owned.id, body, metrics, now),
       ...reversalInsert(c.env.DB, session, owned.id, selected.id, net, now),
       ...ledgerInserts(c.env.DB, session, owned.id, selected.id, decision.transactions.filter(t => t.reasonCode !== "daily_cap"), now),
       dailyCapStatement(c.env.DB, session.profile_id!, owned.id, selected.id, draft.workout.occurredOn, selected.rule.dailyCapTenths, session.user_id, now),
@@ -531,6 +541,10 @@ function draftFromBody(body: Record<string, unknown>, today: string): {
     if (!Number.isFinite(miles) || miles <= 0) return null;
     distanceM = milesToMeters(miles);
   }
+  if (body.distanceKilometers != null && body.distanceKilometers !== "") {
+    if (distanceM !== null || typeof body.distanceKilometers !== "number" || !Number.isFinite(body.distanceKilometers) || body.distanceKilometers <= 0) return null;
+    distanceM = Math.round(body.distanceKilometers * 1000);
+  }
   const notes = body.notes == null || body.notes === "" ? null : body.notes;
   if (notes != null && typeof notes !== "string") return null;
   const clientRequestId = typeof body.clientRequestId === "string" ? body.clientRequestId : null;
@@ -626,12 +640,13 @@ async function historyPage(db: D1Database, profileId: string, limit: number, cur
   }
   const rows = await db.prepare(
     `WITH page AS (
-       SELECT id,type,occurred_on,duration_min,intensity,distance_m,notes,status,review_note,created_at,rule_version_id
+       SELECT id,type,occurred_on,duration_min,intensity,distance_m,notes,status,review_note,created_at,rule_version_id,calories,calorie_source
        FROM workouts WHERE ${where.join(" AND ")}
        ORDER BY occurred_on DESC,created_at DESC,id DESC LIMIT ?
      )
      SELECT w.id,w.type,COALESCE(json_extract(r.config_json,'$.types.' || w.type || '.label'),replace(w.type,'_',' ')) AS activity_label,
        w.occurred_on,w.duration_min,w.intensity,w.distance_m,w.notes,w.status,w.review_note,w.created_at,
+       ${metricColumns},
        (SELECT COALESCE(SUM(t.points_tenths),0) FROM point_transactions t WHERE t.workout_id=w.id) AS points_tenths
      FROM page w LEFT JOIN scoring_rule_versions r ON r.id=w.rule_version_id
      ORDER BY w.occurred_on DESC,w.created_at DESC,w.id DESC`,
@@ -646,6 +661,7 @@ function workoutStatement(db: D1Database, id: string, profileId: string) {
   return db.prepare(
     `SELECT w.id,w.type,COALESCE(json_extract(r.config_json,'$.types.' || w.type || '.label'),replace(w.type,'_',' ')) AS activity_label,
        w.occurred_on,w.duration_min,w.intensity,w.distance_m,w.notes,w.status,w.review_note,w.created_at,
+       ${metricColumns},
        (SELECT COALESCE(SUM(t.points_tenths),0) FROM point_transactions t WHERE t.workout_id=w.id) AS points_tenths
      FROM workouts w LEFT JOIN scoring_rule_versions r ON r.id=w.rule_version_id
      WHERE w.player_profile_id=? AND w.id=?`,
@@ -657,9 +673,11 @@ async function workoutPayload(db: D1Database, id: string, profileId: string, ext
   return { workout: row ? presentWorkout(row) : null, idempotent: extra?.idempotent ?? false };
 }
 
-function presentWorkout(row: WorkoutRow): WorkoutRow & { distance_miles: number | null } {
+function presentWorkout(row: WorkoutRow) {
   return {
     ...row,
+    exercises: JSON.parse(row.exercises_json || "[]") as Lift[],
+    pace_seconds_per_km: row.distance_m ? Math.round(row.duration_min * 60000 / row.distance_m) : null,
     points_tenths: Number(row.points_tenths),
     distance_miles: row.distance_m == null ? null : metersToMiles(row.distance_m),
   };
