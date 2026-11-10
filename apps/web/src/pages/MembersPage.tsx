@@ -24,6 +24,8 @@ export function MembersPage() {
   const [positions, setPositions] = useState<RosterPosition[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [resetUrl, setResetUrl] = useState<string | null>(null);
+  const [resetMemberId, setResetMemberId] = useState<string | null>(null);
+  const [resetPendingId, setResetPendingId] = useState<string | null>(null);
   const [signInUrl, setSignInUrl] = useState<string | null>(null);
 
   async function load() {
@@ -61,7 +63,7 @@ export function MembersPage() {
       <h1 className="font-heading text-2xl font-semibold">Members</h1>
       <p className="text-sm text-quiet">Verify the player's identity before replacing a login link. Share it privately; replacement signs out their other devices.</p>
       {error ? <p role="alert" className="text-gold-soft">{error}</p> : null}
-      {resetUrl ? <ShareLink url={resetUrl} label="Replacement personal login link" /> : null}
+      
       {signInUrl ? <ShareLink url={signInUrl} label="One-time sign-in link" /> : null}
       <ul className="flex flex-col gap-s2">
         {members.map((member) => (
@@ -78,11 +80,18 @@ export function MembersPage() {
             >
               Staff sign-in link
             </button> : null}
-            {member.role === "player" && member.status === "active" ? <button type="button" className="secondary-button mt-s1" onClick={() => {
-              setResetUrl(null);
-              void api<{ url: string }>("/api/player-login-links", { method: "POST", body: JSON.stringify({ userId: member.user_id, action: "rotate" }) })
-                .then(body => setResetUrl(body.url)).catch((caught: unknown) => setError(caught instanceof ApiError ? caught.message : "Could not replace the login link."));
-            }}>Replace login link for {member.roster_name ?? member.name}</button> : null}
+            {member.role === "player" && member.status === "active" ? <>
+              <button type="button" disabled={resetPendingId !== null} className="secondary-button mt-s1" onClick={async () => {
+                if (!window.confirm(`Replace the personal login link for ${member.roster_name ?? member.name}? Their previous link and sessions will stop working.`)) return;
+                setError(null); setResetUrl(null); setResetMemberId(null); setResetPendingId(member.membership_id);
+                try {
+                  const body = await api<{ url: string }>("/api/player-login-links", { method: "POST", body: JSON.stringify({ userId: member.user_id, action: "rotate" }) });
+                  setResetMemberId(member.membership_id); setResetUrl(body.url);
+                } catch (caught) { setError(caught instanceof ApiError ? caught.message : "Could not replace the login link."); }
+                finally { setResetPendingId(null); }
+              }}>{resetPendingId === member.membership_id ? "Generating replacement…" : `Replace login link for ${member.roster_name ?? member.name}`}</button>
+              {resetMemberId === member.membership_id && resetUrl ? <div role="status" className="mt-s2"><p className="text-sm">Replacement created. Copy it now and share privately.</p><ShareLink url={resetUrl} label="Replacement personal login link" /></div> : null}
+            </> : null}
             {member.role === "player" && member.status === "active" ? <button type="button" className="secondary-button" onClick={() => {
               if (!window.confirm("Revoke this player's login link and all sessions?")) return;
               setResetUrl(null);
