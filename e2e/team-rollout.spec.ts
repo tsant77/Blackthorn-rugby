@@ -109,6 +109,7 @@ test("shared registration, personal link login/recovery, training and mobile ref
 
   await useAdmin(page);
   await page.goto("/members");
+  page.once("dialog", dialog => dialog.accept());
   await page.getByRole("button", { name: "Replace login link for Rollout Wing", exact: true }).click();
   const replacement = await page.getByLabel("Replacement personal login link").inputValue();
   await page.context().clearCookies();
